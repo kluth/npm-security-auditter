@@ -4,101 +4,75 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/kluth/npm-security-auditter)](https://goreportcard.com/report/github.com/kluth/npm-security-auditter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/kluth/npm-security-auditter)](https://github.com/kluth/npm-security-auditter)
+[![Releases](https://img.shields.io/github/v/release/kluth/npm-security-auditter)](https://github.com/kluth/npm-security-auditter/releases)
 
-**auditter** is a comprehensive, declarative security analysis tool for npm packages. Unlike standard vulnerability scanners that only check database records, `auditter` performs deep forensic analysis of the package tarball, metadata, and code patterns to detect supply chain attacks, malicious payloads, and sophisticated obfuscation techniques.
+**auditter** is a professional-grade, declarative security analysis tool for the npm ecosystem. It goes beyond simple database lookups, performing deep forensics on package tarballs, metadata anomalies, and code patterns to proactively identify supply chain attacks.
 
-![Audit Demo](https://via.placeholder.com/800x400?text=Auditter+CLI+Demo+Screenshot)
+## 🚀 Key Features
 
-## 🚀 Features
-
-*   **🕵️ Deep Tarball Forensics**: Scans for hidden files, binary executables, and unexpected content not listed in the registry.
-*   **🧠 Heuristic Code Analysis**:
-    *   **Entropy Checks**: Detects high-complexity strings (potential encrypted payloads).
-    *   **Obfuscation Detection**: Flags minified code, hex-encoded strings, and suspicious variable naming.
-    *   **Typosquatting Detection**: Identifies packages mimicking popular libraries (e.g., `react` vs `raect`).
-*   **📦 Dependency Tree Analysis**:
-    *   **Circular Dependencies**: Detects self-referencing loops.
-    *   **Dependency Confusion**: Flags internal-looking package names in public manifests.
-    *   **Tree Depth & Bloat**: Warns about excessive or deep dependency chains.
-*   **⚖️ License Compliance**: Identifying copyleft (GPL, AGPL) and unconventional licenses.
-*   **⏰ Temporal Analysis**:
-    *   **Recent Publish Alert**: Flags versions published < 24h ago (high-risk window for malware).
-    *   **Dormancy Checks**: Detects sudden activity after long inactivity (account takeover indicator).
-*   **🛡️ Provenance Verification**: Checks for SLSA build attestations.
-*   **🧪 Dynamic Sandbox (Optional)**: Safe execution of install scripts to monitor behavioral indicators (network, filesystem).
+*   **🕵️ Deep Tarball Forensics**: Scans for hidden files (`.env`, `.npmrc`), binary executables, and unexpected content not present in the registry metadata.
+*   **🧠 Heuristic Code Analysis**: 
+    *   **Complexity (Entropy) Analysis**: Detects highly randomized data chunks which often hide encrypted or obfuscated payloads.
+    *   **Obfuscation Detection**: Identifies minification tricks, hex-encoded properties, and suspicious `eval`/`Function` usage.
+*   **📦 Dependency Health**: Detects circular dependencies, dependency confusion risks, and unsafe version ranges (`*`, `latest`).
+*   **⏰ Lifecycle Analysis**: Flags versions published in the high-risk "malware window" (< 24h) or sudden activity after long dormancy.
+*   **🛡️ Provenance & Trust**: Verifies SLSA build attestations and maintainer reputation (disposable emails, single-maintainer risks).
+*   **🧪 Behavioral Sandbox**: (Linux only) Safe execution of install scripts to monitor network calls and filesystem changes.
 
 ## 📥 Installation
 
+### Download Binaries
+Download pre-compiled binaries for **Linux, Windows, and macOS** from the [Releases Page](https://github.com/kluth/npm-security-auditter/releases).
+
 ### From Source
-
 Requires Go 1.23+:
-
 ```bash
 go install github.com/kluth/npm-security-auditter/cmd/auditter@latest
 ```
 
-### Manual Build
+## 🛠️ Detailed Usage
 
 ```bash
-git clone https://github.com/kluth/npm-security-auditter.git
-cd npm-security-auditter
-go build -o auditter cmd/auditter/main.go
+auditter <package-name> [flags]
 ```
 
-## 🛠️ Usage
+### Full Flag Reference
 
-### Audit a Single Package
+| Flag | Shorthand | Description | Default |
+| :--- | :---: | :--- | :--- |
+| `--project` | `-p` | Path to `package.json` or `package-lock.json` for full project audit | - |
+| `--node-modules` | - | Recursively audit all dependencies found in local `node_modules/` | `false` |
+| `--format` | - | Output format: `terminal`, `json`, `markdown`, `html`, `csv`, `pdf` | `terminal` |
+| `--json` | - | Shortcut for `--format json` | `false` |
+| `--severity` | `-s` | Minimum severity level to report: `low`, `medium`, `high`, `critical` | `low` |
+| `--lang` | - | Localization for the report (see list below) | `en` |
+| `--no-sandbox` | - | Disable dynamic analysis (no container execution) | `false` |
+| `--concurrency`| `-c` | Max concurrent package audits | `5` |
+| `--timeout` | - | Timeout in seconds for each package audit | `180` |
+| `--registry` | `-r` | Custom npm registry URL | `https://registry.npmjs.org` |
+| `--interactive`| `-i` | Launch the interactive TUI mode (Bubble Tea powered) | `false` |
+| `--output` | `-o` | Write the report to a specific file | `stdout` |
+| `--verbose` | `-v` | Enable detailed debug logging | `false` |
+| `--version` | - | Display current version and exit | - |
 
-Check a specific package from the npm registry:
+### Supported Languages (`--lang`)
+`auditter` supports standard and "fun" localizations for its reports:
+*   🌍 **Standard**: `en` (English), `de` (German), `fr` (French), `es` (Spanish), `it` (Italian), `pt` (Portuguese), `jp` (Japanese), `zh` (Chinese), `ru` (Russian).
+*   🖖 **Easter Eggs**: `tlh` (Klingon), `vul` (Vulcan), `sin` (Sindarin/Elvish).
 
-```bash
-auditter express
-```
+## 📊 Security Analyzers
 
-### Audit a Local Project
-
-Scan your entire `package.json` or `node_modules` directory:
-
-```bash
-# Scan dependencies defined in package.json
-auditter --project package.json
-
-# Deep scan of installed node_modules
-auditter --node-modules
-```
-
-### Options
-
-| Flag | Description | Default |
-| :--- | :--- | :--- |
-| `-p, --project` | Path to `package.json` or `package-lock.json` | - |
-| `-r, --registry` | Custom npm registry URL | `https://registry.npmjs.org` |
-| `--no-sandbox` | Disable dynamic analysis (faster, less thorough) | `false` |
-| `--format` | Output format (`terminal`, `json`, `markdown`) | `terminal` |
-| `--lang` | Report language (`en`, `de`, `fr`, etc.) | `en` |
-| `-v, --verbose` | Enable verbose logging | `false` |
-
-## 📊 Analyzers
-
-`auditter` runs a suite of specialized analyzers:
-
-1.  **`tarball-analysis`**: The core forensic engine. Checks file content, entropy, and hidden artifacts.
-2.  **`metadata`**: Validates registry metadata against package content (name mismatches, version anomalies).
-3.  **`maintainers`**: Assesses maintainer reputation, email domains, and ownership changes.
-4.  **`typosquatting`**: Compares package name against top 10k npm packages.
-5.  **`dependencies`**: Reviews dependency tree for confusion attacks and version locking issues.
-6.  **`install-scripts`**: Static analysis of `preinstall`/`postinstall` scripts for malicious patterns (curl | bash).
-7.  **`provenance`**: Verifies sigstore/SLSA signatures.
-8.  **`dynamic-analysis`**: (Sandbox) Monitors system calls during installation.
+1.  **`tarball-analysis`**: Inspects the actual payload. Flags large files (>1MB), hidden directories, and suspicious JS patterns.
+2.  **`metadata`**: Checks for description/README mismatches between npm and GitHub, and flags deprecated versions.
+3.  **`maintainers`**: Identifies "Disposable Email" domains and "Sudden Activity after Inactivity" (Account Takeover indicator).
+4.  **`typosquatting`**: Uses character-difference algorithms to find packages mimicking `lodash`, `express`, `react`, etc.
+5.  **`dependencies`**: Analyzes the tree for "Dependency Confusion" (internal-looking names in public registries).
+6.  **`install-scripts`**: Static analysis of `preinstall` scripts for `curl`, `wget`, or `sh` execution.
+7.  **`provenance`**: Verifies SLSA signatures to ensure the package was built on a trusted CI (like GitHub Actions).
+8.  **`dynamic-analysis`**: Executes the package in a restricted sandbox to track real-time system calls.
 
 ## 🤝 Contributing
-
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details on how to submit pull requests and report issues.
-
-## 🔒 Security
-
-For security policy and vulnerability reporting, please see [SECURITY.md](SECURITY.md).
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for local development setup and pull request guidelines.
 
 ## 📄 License
-
-This project is licensed under the [MIT License](LICENSE).
+Licensed under the [MIT License](LICENSE).
