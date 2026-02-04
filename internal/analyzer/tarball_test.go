@@ -261,7 +261,8 @@ func TestTarballAnalyzer_Obfuscation_And_Entropy(t *testing.T) {
 		"High non-alphanumeric ratio",
 		"Long base64-encoded string",
 		"Compiled binary in package",
-		"Very high file entropy (likely obfuscated)",
+		"Highly complex or randomized content",
+		"Extremely complex or randomized content",
 	}
 
 	foundTitles := make(map[string]bool)
