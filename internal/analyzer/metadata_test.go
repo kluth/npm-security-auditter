@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matthias/auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/registry"
 )
 
 func TestMetadataAnalyzer(t *testing.T) {

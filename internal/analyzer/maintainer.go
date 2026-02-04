@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matthias/auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/registry"
 )
 
 // MaintainerAnalyzer checks maintainer/ownership risks.

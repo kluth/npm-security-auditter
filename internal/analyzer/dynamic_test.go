@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/matthias/auditter/internal/registry"
-	"github.com/matthias/auditter/internal/sandbox"
+	"github.com/kluth/npm-security-auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/sandbox"
 )
 
 func TestSandboxAnalyzer_Name(t *testing.T) {

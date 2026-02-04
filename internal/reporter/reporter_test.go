@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/matthias/auditter/internal/analyzer"
+	"github.com/kluth/npm-security-auditter/internal/analyzer"
 )
 
 func TestCalculateRiskScore(t *testing.T) {

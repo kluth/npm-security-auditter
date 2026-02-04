@@ -3,7 +3,7 @@ package reporter
 import (
 	"fmt"
 
-	"github.com/matthias/auditter/internal/analyzer"
+	"github.com/kluth/npm-security-auditter/internal/analyzer"
 )
 
 type Language string

@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/matthias/auditter/internal/registry"
-	"github.com/matthias/auditter/internal/tarball"
+	"github.com/kluth/npm-security-auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/tarball"
 )
 
 // TarballAnalyzer performs deep content analysis of extracted package tarballs.

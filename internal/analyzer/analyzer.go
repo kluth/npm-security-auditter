@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/matthias/auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/registry"
 )
 
 // Severity represents the severity level of a finding.

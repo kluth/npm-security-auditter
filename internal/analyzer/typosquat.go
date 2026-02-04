@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/matthias/auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/registry"
 )
 
 // popularPackages is a list of popular npm packages to check for typosquatting.

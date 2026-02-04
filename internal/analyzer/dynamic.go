@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/matthias/auditter/internal/registry"
-	"github.com/matthias/auditter/internal/sandbox"
+	"github.com/kluth/npm-security-auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/sandbox"
 )
 
 // SandboxAnalyzer performs dynamic analysis by running the package in a sandbox.

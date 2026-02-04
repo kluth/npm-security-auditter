@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/matthias/auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/registry"
 )
 
 const osvAPIURL = "https://api.osv.dev/v1/query"

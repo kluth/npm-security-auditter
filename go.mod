@@ -1,4 +1,4 @@
-module github.com/matthias/auditter
+module github.com/kluth/npm-security-auditter
 
 go 1.25.6
 

@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/matthias/auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/registry"
 )
 
 // BinaryAnalyzer detects native addons, binary downloads, and obfuscated code patterns.

@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/matthias/auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/registry"
 )
 
 // ScriptsAnalyzer detects suspicious install scripts.

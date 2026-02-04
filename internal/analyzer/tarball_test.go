@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/matthias/auditter/internal/registry"
-	"github.com/matthias/auditter/internal/tarball"
+	"github.com/kluth/npm-security-auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/tarball"
 )
 
 func makeTarballData(t *testing.T, files map[string]string) ([]byte, string) {

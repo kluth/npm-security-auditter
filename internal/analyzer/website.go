@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matthias/auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/registry"
 )
 
 // RepoVerifierAnalyzer verifies the source repository and homepage of a package.

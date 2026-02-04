@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/go-pdf/fpdf"
-	"github.com/matthias/auditter/internal/analyzer"
+	"github.com/kluth/npm-security-auditter/internal/analyzer"
 )
 
 // ANSI color codes

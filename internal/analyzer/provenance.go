@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/matthias/auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/registry"
 )
 
 // ProvenanceAnalyzer checks for supply chain and provenance signals.

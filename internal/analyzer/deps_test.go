@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/matthias/auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/registry"
 )
 
 func TestDepsAnalyzer(t *testing.T) {

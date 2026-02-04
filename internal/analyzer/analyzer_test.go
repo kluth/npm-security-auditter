@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/matthias/auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/registry"
 )
 
 type mockAnalyzer struct {

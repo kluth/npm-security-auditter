@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/matthias/auditter/internal/registry"
+	"github.com/kluth/npm-security-auditter/internal/registry"
 )
 
 func TestScriptsAnalyzer(t *testing.T) {
