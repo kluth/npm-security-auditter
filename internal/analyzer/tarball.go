@@ -1,0 +1,450 @@
+package analyzer
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/matthias/auditter/internal/registry"
+	"github.com/matthias/auditter/internal/tarball"
+)
+
+// TarballAnalyzer performs deep content analysis of extracted package tarballs.
+type TarballAnalyzer struct{}
+
+func NewTarballAnalyzer() *TarballAnalyzer {
+	return &TarballAnalyzer{}
+}
+
+func (a *TarballAnalyzer) Name() string {
+	return "tarball-analysis"
+}
+
+func (a *TarballAnalyzer) Analyze(ctx context.Context, pkg *registry.PackageMetadata, version *registry.PackageVersion) ([]Finding, error) {
+	if version.Dist.Tarball == "" {
+		return nil, fmt.Errorf("no tarball URL in package metadata")
+	}
+
+	ep, err := tarball.Download(ctx, version.Dist.Tarball, version.Dist.Shasum)
+	if err != nil {
+		var mismatch *tarball.ShasumMismatchError
+		if errors.As(err, &mismatch) {
+			return []Finding{{
+				Analyzer:    a.Name(),
+				Title:       "Tarball SHA-1 mismatch",
+				Description: fmt.Sprintf("The tarball checksum does not match the registry value. Expected %s, got %s. This could indicate tampering.", mismatch.Expected, mismatch.Actual),
+				Severity:    SeverityCritical,
+			}}, nil
+		}
+		return nil, fmt.Errorf("downloading tarball: %w", err)
+	}
+	defer ep.Cleanup()
+
+	var findings []Finding
+
+	findings = append(findings, a.scanJSFiles(ep)...)
+	findings = append(findings, a.detectObfuscation(ep)...)
+	findings = append(findings, a.findHiddenFiles(ep)...)
+	findings = append(findings, a.detectBinaries(ep)...)
+	findings = append(findings, a.findEncodedPayloads(ep)...)
+	findings = append(findings, a.comparePackageJSON(ep, version)...)
+	findings = append(findings, a.entropyAnalysis(ep)...)
+	findings = append(findings, a.findCryptoWallets(ep)...)
+	findings = append(findings, a.checkMalwareSignatures(ep)...)
+	findings = append(findings, a.checkLargeFiles(ep)...)
+
+	return findings, nil
+}
+
+func (a *TarballAnalyzer) checkLargeFiles(ep *tarball.ExtractedPackage) []Finding {
+	var findings []Finding
+	for _, f := range ep.Files {
+		// Flag files larger than 1MB
+		if f.Size > 1024*1024 {
+			severity := SeverityLow
+			if f.IsJS {
+				severity = SeverityMedium
+			}
+			*&findings = append(findings, Finding{
+				Analyzer:    a.Name(),
+				Title:       "Large file detected",
+				Description: fmt.Sprintf("File %q is unusually large (%.2f MB).", f.Path, float64(f.Size)/(1024*1024)),
+				Severity:    severity,
+				ExploitExample: "Large files can be used to hide malicious code or data:\n" +
+					"    - Attackers may append malicious payloads to large, legitimate-looking assets\n" +
+					"    - Large JS files are difficult to review and can hide complex obfuscated code\n" +
+					"    - This could also indicate a bloated package that impacts build performance",
+				Remediation: "Manually inspect the content of large files to ensure they do not contain hidden payloads or unnecessary data.",
+			})
+		}
+	}
+	return findings
+}
+
+func (a *TarballAnalyzer) scanJSFiles(ep *tarball.ExtractedPackage) []Finding {
+	var findings []Finding
+	for _, f := range ep.Files {
+		if !f.IsJS {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(ep.Dir, f.Path))
+		if err != nil {
+			continue
+		}
+
+		for _, pat := range maliciousJSPatterns {
+			if pat.Pattern.Match(content) {
+				findings = append(findings, Finding{
+					Analyzer:    "tarball-analysis",
+					Title:       fmt.Sprintf("Suspicious pattern: %s", pat.Name),
+					Description: fmt.Sprintf("File %q contains a suspicious pattern (%s) that may indicate malicious behavior.", f.Path, pat.Name),
+					Severity:    pat.Severity,
+				})
+			}
+		}
+	}
+	return findings
+}
+
+func (a *TarballAnalyzer) detectObfuscation(ep *tarball.ExtractedPackage) []Finding {
+	var findings []Finding
+	for _, f := range ep.Files {
+		if !f.IsJS {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(ep.Dir, f.Path))
+		if err != nil {
+			continue
+		}
+
+		lines := bytes.Split(content, []byte("\n"))
+		if len(lines) == 0 {
+			continue
+		}
+
+		// Check average line length.
+		totalLen := 0
+		for _, line := range lines {
+			totalLen += len(line)
+		}
+		avgLineLen := totalLen / len(lines)
+		if avgLineLen > 5000 {
+			findings = append(findings, Finding{
+				Analyzer:    "tarball-analysis",
+				Title:       "Extremely long lines (likely minified/obfuscated)",
+				Description: fmt.Sprintf("File %q has an average line length of %d characters, which suggests obfuscation or suspicious minification.", f.Path, avgLineLen),
+				Severity:    SeverityMedium,
+			})
+		}
+
+		// Check non-alphanumeric ratio.
+		if len(content) > 100 {
+			nonAlpha := 0
+			for _, b := range content {
+				if !((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == ' ' || b == '\n' || b == '\t') {
+					nonAlpha++
+				}
+			}
+			ratio := float64(nonAlpha) / float64(len(content))
+			if ratio > 0.5 {
+				findings = append(findings, Finding{
+					Analyzer:    "tarball-analysis",
+					Title:       "High non-alphanumeric ratio",
+					Description: fmt.Sprintf("File %q has a non-alphanumeric character ratio of %.2f, suggesting encoded or obfuscated content.", f.Path, ratio),
+					Severity:    SeverityMedium,
+				})
+			}
+		}
+	}
+	return findings
+}
+
+func (a *TarballAnalyzer) findHiddenFiles(ep *tarball.ExtractedPackage) []Finding {
+	var findings []Finding
+	for _, f := range ep.Files {
+		base := filepath.Base(f.Path)
+		dir := filepath.Dir(f.Path)
+
+		// Check the filename itself.
+		if hiddenFileNames[base] {
+			findings = append(findings, Finding{
+				Analyzer:    "tarball-analysis",
+				Title:       "Hidden/sensitive file in package",
+				Description: fmt.Sprintf("File %q is a sensitive file that should not be included in a published package.", f.Path),
+				Severity:    SeverityHigh,
+			})
+		}
+
+		// Check directory components.
+		for _, part := range strings.Split(dir, string(os.PathSeparator)) {
+			if hiddenFileNames[part] {
+				findings = append(findings, Finding{
+					Analyzer:    "tarball-analysis",
+					Title:       "Sensitive directory in package",
+					Description: fmt.Sprintf("File %q is inside a sensitive directory (%s) that should not be included.", f.Path, part),
+					Severity:    SeverityHigh,
+				})
+				break
+			}
+		}
+	}
+	return findings
+}
+
+func (a *TarballAnalyzer) detectBinaries(ep *tarball.ExtractedPackage) []Finding {
+	var findings []Finding
+	for _, f := range ep.Files {
+		ext := strings.ToLower(filepath.Ext(f.Path))
+		if ext == ".exe" || ext == ".dll" || ext == ".so" || ext == ".dylib" {
+			findings = append(findings, Finding{
+				Analyzer:    "tarball-analysis",
+				Title:       "Compiled binary in package",
+				Description: fmt.Sprintf("File %q is a compiled binary (%s). Binaries in npm packages are unusual and may be malicious.", f.Path, ext),
+				Severity:    SeverityHigh,
+			})
+			continue
+		}
+
+		// Check magic bytes.
+		content, err := readFileHead(filepath.Join(ep.Dir, f.Path), 8)
+		if err != nil || len(content) < 2 {
+			continue
+		}
+
+		for _, magic := range binaryMagicBytes {
+			if len(content) >= len(magic.Magic) && bytes.Equal(content[:len(magic.Magic)], magic.Magic) {
+				findings = append(findings, Finding{
+					Analyzer:    "tarball-analysis",
+					Title:       fmt.Sprintf("Binary detected: %s", magic.Name),
+					Description: fmt.Sprintf("File %q contains magic bytes for %s. Compiled binaries in npm packages are suspicious.", f.Path, magic.Name),
+					Severity:    SeverityHigh,
+				})
+				break
+			}
+		}
+	}
+	return findings
+}
+
+func (a *TarballAnalyzer) findEncodedPayloads(ep *tarball.ExtractedPackage) []Finding {
+	var findings []Finding
+	// Only scan JS/TS files for encoded payloads.
+	b64Chars := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+
+	for _, f := range ep.Files {
+		if !f.IsJS {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(ep.Dir, f.Path))
+		if err != nil {
+			continue
+		}
+
+		// Look for long base64 strings.
+		inB64 := 0
+		for _, b := range content {
+			if strings.ContainsRune(b64Chars, rune(b)) {
+				inB64++
+			} else {
+				if inB64 > 100 {
+					findings = append(findings, Finding{
+						Analyzer:    "tarball-analysis",
+						Title:       "Long base64-encoded string",
+						Description: fmt.Sprintf("File %q contains a base64-like string of %d characters, which may be an encoded payload.", f.Path, inB64),
+						Severity:    SeverityMedium,
+					})
+					break // one finding per file is enough
+				}
+				inB64 = 0
+			}
+		}
+
+		// Compute Shannon entropy on chunks.
+		if len(content) > 256 {
+			entropy := shannonEntropy(content)
+			if entropy > 4.5 {
+				findings = append(findings, Finding{
+					Analyzer:    "tarball-analysis",
+					Title:       "Highly complex or randomized content",
+					Description: fmt.Sprintf("File %q contains highly randomized data (complexity score: %.2f), which often indicates encoded, encrypted, or obfuscated payloads.", f.Path, entropy),
+					Severity:    SeverityLow,
+				})
+			}
+		}
+	}
+	return findings
+}
+
+func (a *TarballAnalyzer) comparePackageJSON(ep *tarball.ExtractedPackage, version *registry.PackageVersion) []Finding {
+	if ep.PackageJSON == nil {
+		return nil
+	}
+
+	var findings []Finding
+	var tarballPkg struct {
+		Name         string            `json:"name"`
+		Version      string            `json:"version"`
+		Scripts      map[string]string `json:"scripts"`
+		Dependencies map[string]string `json:"dependencies"`
+	}
+
+	if err := json.Unmarshal(ep.PackageJSON, &tarballPkg); err != nil {
+		return nil
+	}
+
+	// Name mismatch.
+	if tarballPkg.Name != "" && tarballPkg.Name != version.Name {
+		findings = append(findings, Finding{
+			Analyzer:    "tarball-analysis",
+			Title:       "Package name mismatch",
+			Description: fmt.Sprintf("Tarball package.json name is %q but registry says %q. This is highly suspicious.", tarballPkg.Name, version.Name),
+			Severity:    SeverityCritical,
+		})
+	}
+
+	// Check for extra scripts in tarball not in registry.
+	dangerousScripts := []string{"preinstall", "install", "postinstall", "preuninstall", "postuninstall"}
+	for _, scriptName := range dangerousScripts {
+		tarballScript, inTarball := tarballPkg.Scripts[scriptName]
+		_, inRegistry := version.Scripts[scriptName]
+		if inTarball && !inRegistry {
+			findings = append(findings, Finding{
+				Analyzer:       "tarball-analysis",
+				Title:          "Hidden install script in tarball",
+				Description:    fmt.Sprintf("The tarball contains a %q script (%s) not visible in registry metadata.", scriptName, tarballScript),
+				Severity:       SeverityCritical,
+				ExploitExample: fmt.Sprintf("The script %q runs: %s", scriptName, tarballScript),
+			})
+		}
+	}
+
+	// Extra dependencies in tarball.
+	for dep := range tarballPkg.Dependencies {
+		if _, ok := version.Dependencies[dep]; !ok {
+			findings = append(findings, Finding{
+				Analyzer:    "tarball-analysis",
+				Title:       "Hidden dependency in tarball",
+				Description: fmt.Sprintf("Tarball package.json lists dependency %q not in registry metadata.", dep),
+				Severity:    SeverityHigh,
+			})
+		}
+	}
+
+	return findings
+}
+
+func (a *TarballAnalyzer) entropyAnalysis(ep *tarball.ExtractedPackage) []Finding {
+	var findings []Finding
+	for _, f := range ep.Files {
+		if !f.IsJS || f.Size < 256 {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(ep.Dir, f.Path))
+		if err != nil {
+			continue
+		}
+
+		entropy := shannonEntropy(content)
+		if entropy > 5.5 {
+			findings = append(findings, Finding{
+				Analyzer:    "tarball-analysis",
+				Title:       "Extremely complex or randomized content",
+				Description: fmt.Sprintf("File %q contains extremely randomized data (complexity score: %.2f), which is a strong indicator of obfuscated or encrypted malicious code.", f.Path, entropy),
+				Severity:    SeverityHigh,
+			})
+		}
+	}
+	return findings
+}
+
+func (a *TarballAnalyzer) findCryptoWallets(ep *tarball.ExtractedPackage) []Finding {
+	var findings []Finding
+	for _, f := range ep.Files {
+		if !f.IsJS {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(ep.Dir, f.Path))
+		if err != nil {
+			continue
+		}
+
+		for _, pat := range cryptoWalletPatterns {
+			if pat.Pattern.Match(content) {
+				findings = append(findings, Finding{
+					Analyzer:    "tarball-analysis",
+					Title:       fmt.Sprintf("Cryptocurrency address found: %s", pat.Name),
+					Description: fmt.Sprintf("File %q contains what appears to be a %s. This may indicate cryptojacking or unauthorized mining.", f.Path, pat.Name),
+					Severity:    SeverityHigh,
+				})
+			}
+		}
+	}
+	return findings
+}
+
+func (a *TarballAnalyzer) checkMalwareSignatures(ep *tarball.ExtractedPackage) []Finding {
+	var findings []Finding
+	for _, f := range ep.Files {
+		content, err := os.ReadFile(filepath.Join(ep.Dir, f.Path))
+		if err != nil {
+			continue
+		}
+
+		for _, sig := range knownMalwareSignatures {
+			if bytes.Contains(content, sig.Signature) {
+				findings = append(findings, Finding{
+					Analyzer:    "tarball-analysis",
+					Title:       fmt.Sprintf("Known malware signature: %s", sig.Name),
+					Description: fmt.Sprintf("File %q matches a known malware signature (%s). This package may be compromised.", f.Path, sig.Name),
+					Severity:    SeverityCritical,
+				})
+			}
+		}
+	}
+	return findings
+}
+
+// shannonEntropy computes the Shannon entropy of a byte slice in bits per byte.
+func shannonEntropy(data []byte) float64 {
+	if len(data) == 0 {
+		return 0
+	}
+
+	var freq [256]float64
+	for _, b := range data {
+		freq[b]++
+	}
+
+	n := float64(len(data))
+	var entropy float64
+	for _, count := range freq {
+		if count == 0 {
+			continue
+		}
+		p := count / n
+		entropy -= p * math.Log2(p)
+	}
+	return entropy
+}
+
+// readFileHead reads the first n bytes of a file.
+func readFileHead(path string, n int) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	buf := make([]byte, n)
+	read, err := f.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf[:read], nil
+}

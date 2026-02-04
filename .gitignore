@@ -1,0 +1,6 @@
+auditter
+*.exe
+node_modules/
+*.out
+project-report.txt
+stdout
