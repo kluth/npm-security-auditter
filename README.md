@@ -36,6 +36,47 @@ go install github.com/kluth/npm-security-auditter/cmd/auditter@latest
 auditter <package-name> [flags]
 ```
 
+### Example Commands
+
+#### 🟢 Basic
+Audit a specific package from the registry:
+```bash
+auditter express
+```
+
+Audit your current project using `package.json`:
+```bash
+auditter -p package.json
+```
+
+#### 🟡 Intermediate
+Audit with high-severity focus and save as Markdown:
+```bash
+auditter lodash --severity high --format markdown -o report.md
+```
+
+Run a deep audit of all installed dependencies in German:
+```bash
+auditter --node-modules --lang de
+```
+
+#### 🔴 Advanced & Chained
+Audit a project with 10 concurrent workers, a 5-minute timeout, and no sandbox (for speed), outputting to JSON:
+```bash
+auditter -p package.json -c 10 --timeout 300 --no-sandbox --json > audit.json
+```
+
+**Automation Pipeline**: Check for critical findings and fail if any are found (using `jq`):
+```bash
+auditter express --json | jq -e '.findings[] | select(.severity == "critical")' > /dev/null || echo "Critical vulnerabilities found!"
+```
+
+#### 🖖 Just for Fun
+Audit in Klingon:
+```bash
+auditter react --lang tlh
+```
+
 ### Full Flag Reference
 
 | Flag | Shorthand | Description | Default |
