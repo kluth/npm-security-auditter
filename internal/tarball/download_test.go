@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
@@ -218,6 +219,150 @@ func TestSanitizePath(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("sanitizePath(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestCleanup(t *testing.T) {
+	// Nil package
+	var ep *ExtractedPackage
+	ep.Cleanup() // should not panic
+
+	// Empty dir
+	ep2 := &ExtractedPackage{Dir: ""}
+	ep2.Cleanup() // should not panic
+
+	// Valid dir
+	dir := t.TempDir()
+	ep3 := &ExtractedPackage{Dir: dir}
+	ep3.Cleanup()
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Error("expected dir to be removed after cleanup")
+	}
+}
+
+func TestDownload_EmptyShasum(t *testing.T) {
+	files := map[string]string{
+		"index.js": `console.log("hello");`,
+	}
+	data, _ := makeTarball(t, files)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(data)
+	}))
+	defer srv.Close()
+
+	// Empty shasum should not cause an error (verification is skipped)
+	ep, err := Download(context.Background(), srv.URL+"/test.tgz", "")
+	if err != nil {
+		t.Fatalf("expected no error with empty shasum, got %v", err)
+	}
+	defer ep.Cleanup()
+}
+
+func TestDownload_DirectoryEntry(t *testing.T) {
+	// Create a tarball with a directory entry (TypeDir) that should be skipped
+	var buf bytes.Buffer
+	hasher := sha1.New()
+	w := io.MultiWriter(&buf, hasher)
+	gzw := gzip.NewWriter(w)
+	tw := tar.NewWriter(gzw)
+
+	// Add a directory entry
+	tw.WriteHeader(&tar.Header{
+		Name:     "package/lib/",
+		Mode:     0o755,
+		Typeflag: tar.TypeDir,
+	})
+
+	// Add a regular file
+	content := []byte(`console.log("hello");`)
+	tw.WriteHeader(&tar.Header{
+		Name:     "package/index.js",
+		Mode:     0o644,
+		Size:     int64(len(content)),
+		Typeflag: tar.TypeReg,
+	})
+	tw.Write(content)
+
+	tw.Close()
+	gzw.Close()
+
+	shasum := hex.EncodeToString(hasher.Sum(nil))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(buf.Bytes())
+	}))
+	defer srv.Close()
+
+	ep, err := Download(context.Background(), srv.URL+"/test.tgz", shasum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ep.Cleanup()
+
+	// Only the regular file should be in the list, not the directory
+	if len(ep.Files) != 1 {
+		t.Errorf("expected 1 file (skipping dir entry), got %d", len(ep.Files))
+	}
+}
+
+func TestSanitizePath_Absolute(t *testing.T) {
+	got := sanitizePath("/etc/passwd")
+	if got != "" {
+		t.Errorf("expected empty for absolute path, got %q", got)
+	}
+}
+
+func TestDownload_OversizedFile(t *testing.T) {
+	// Create a tarball with a header claiming a file >10MB (maxFileSize)
+	var buf bytes.Buffer
+	hasher := sha1.New()
+	w := io.MultiWriter(&buf, hasher)
+	gzw := gzip.NewWriter(w)
+	tw := tar.NewWriter(gzw)
+
+	// Write a header with Size > maxFileSize but don't actually write that much data
+	tw.WriteHeader(&tar.Header{
+		Name:     "package/huge.js",
+		Mode:     0o644,
+		Size:     11 * 1024 * 1024, // 11MB, exceeds 10MB limit
+		Typeflag: tar.TypeReg,
+	})
+	// Write minimal actual data (tar will pad)
+	tw.Write([]byte("x"))
+	tw.Close()
+	gzw.Close()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(buf.Bytes())
+	}))
+	defer srv.Close()
+
+	_, err := Download(context.Background(), srv.URL+"/test.tgz", "")
+	if err == nil {
+		t.Fatal("expected error for oversized file")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("exceeds maximum size")) {
+		t.Errorf("expected max size error, got: %v", err)
+	}
+}
+
+func TestDownload_NetworkError(t *testing.T) {
+	_, err := Download(context.Background(), "http://127.0.0.1:0/nonexistent.tgz", "")
+	if err == nil {
+		t.Error("expected network error")
+	}
+}
+
+func TestIsJSFile_CJS(t *testing.T) {
+	if !isJSFile("module.cjs") {
+		t.Error("expected .cjs to be recognized as JS")
+	}
+	if !isJSFile("module.mts") {
+		t.Error("expected .mts to be recognized as JS")
+	}
+	if !isJSFile("module.cts") {
+		t.Error("expected .cts to be recognized as JS")
 	}
 }
 

@@ -88,6 +88,92 @@ func TestDepsAnalyzerExcessive(t *testing.T) {
 	}
 }
 
+func TestDepsAnalyzerManyDeps(t *testing.T) {
+	deps := make(map[string]string)
+	for i := 0; i < 25; i++ {
+		deps[fmt.Sprintf("dep-%d", i)] = "^1.0.0"
+	}
+
+	analyzer := NewDepsAnalyzer()
+	ver := &registry.PackageVersion{Dependencies: deps}
+	findings, err := analyzer.Analyze(context.Background(), &registry.PackageMetadata{}, ver)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+
+	found := false
+	for _, f := range findings {
+		if f.Title == "Many dependencies" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected 'Many dependencies' finding")
+	}
+}
+
+func TestDepsAnalyzerSelfRef(t *testing.T) {
+	analyzer := NewDepsAnalyzer()
+	ver := &registry.PackageVersion{
+		Dependencies: map[string]string{"self-pkg": "^1.0.0"},
+	}
+	findings, err := analyzer.Analyze(context.Background(), &registry.PackageMetadata{Name: "self-pkg"}, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, f := range findings {
+		if f.Title == "Self-referencing dependency" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'Self-referencing dependency' finding")
+	}
+}
+
+func TestDepsAnalyzerEmptyVersion(t *testing.T) {
+	analyzer := NewDepsAnalyzer()
+	ver := &registry.PackageVersion{
+		Dependencies: map[string]string{"some-pkg": ""},
+	}
+	findings, err := analyzer.Analyze(context.Background(), &registry.PackageMetadata{}, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Title == "Unsafe dependency version" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'Unsafe dependency version' finding for empty version")
+	}
+}
+
+func TestDepsAnalyzerDevDepsConfusion(t *testing.T) {
+	analyzer := NewDepsAnalyzer()
+	ver := &registry.PackageVersion{
+		DevDependencies: map[string]string{"internal-test-utils": "^1.0.0"},
+	}
+	findings, err := analyzer.Analyze(context.Background(), &registry.PackageMetadata{}, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Title == "Potential dependency confusion" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected dependency confusion finding for devDependencies")
+	}
+}
+
 func TestIsInternalLookingName(t *testing.T) {
 	tests := []struct {
 		name string

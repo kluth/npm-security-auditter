@@ -214,3 +214,194 @@ func TestMetadataAnalyzer_MissingCreated(t *testing.T) {
 		}
 	}
 }
+
+func TestMetadataAnalyzer_RecentPublish(t *testing.T) {
+	analyzer := NewMetadataAnalyzer()
+	pkg := &registry.PackageMetadata{
+		Repository: &registry.Repository{URL: "http://github.com/a/b"},
+		Time: map[string]time.Time{
+			"created": time.Now().Add(-365 * 24 * time.Hour),
+			"1.0.0":   time.Now().Add(-1 * time.Hour), // published 1 hour ago
+		},
+		Versions: map[string]registry.PackageVersion{"1.0.0": {}},
+	}
+	ver := &registry.PackageVersion{
+		Version:    "1.0.0",
+		License:    "MIT",
+		Repository: &registry.Repository{URL: "http://github.com/a/b"},
+	}
+
+	findings, err := analyzer.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Title == "Very recently published version" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'Very recently published version' finding")
+	}
+}
+
+func TestMetadataAnalyzer_RecentPublishNotRecent(t *testing.T) {
+	analyzer := NewMetadataAnalyzer()
+	pkg := &registry.PackageMetadata{
+		Repository: &registry.Repository{URL: "http://github.com/a/b"},
+		Time: map[string]time.Time{
+			"created": time.Now().Add(-365 * 24 * time.Hour),
+			"1.0.0":   time.Now().Add(-48 * time.Hour), // published 2 days ago
+		},
+		Versions: map[string]registry.PackageVersion{"1.0.0": {}},
+	}
+	ver := &registry.PackageVersion{
+		Version:    "1.0.0",
+		License:    "MIT",
+		Repository: &registry.Repository{URL: "http://github.com/a/b"},
+	}
+
+	findings, err := analyzer.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findings {
+		if f.Title == "Very recently published version" {
+			t.Error("should not find 'Very recently published version' for 2 day old publish")
+		}
+	}
+}
+
+func TestMetadataAnalyzer_Deprecated(t *testing.T) {
+	analyzer := NewMetadataAnalyzer()
+	pkg := &registry.PackageMetadata{
+		Repository: &registry.Repository{URL: "http://github.com/a/b"},
+		Time:       map[string]time.Time{"created": time.Now().Add(-365 * 24 * time.Hour)},
+		Versions:   map[string]registry.PackageVersion{"1.0.0": {}, "1.1.0": {}},
+	}
+	ver := &registry.PackageVersion{
+		License:    "MIT",
+		Deprecated: "Use package-v2 instead",
+		Repository: &registry.Repository{URL: "http://github.com/a/b"},
+	}
+
+	findings, err := analyzer.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Title == "Deprecated package version" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'Deprecated package version' finding")
+	}
+}
+
+func TestMetadataAnalyzer_CopyleftLicense(t *testing.T) {
+	analyzer := NewMetadataAnalyzer()
+	pkg := &registry.PackageMetadata{
+		Repository: &registry.Repository{URL: "http://github.com/a/b"},
+		Time:       map[string]time.Time{"created": time.Now().Add(-365 * 24 * time.Hour)},
+		Versions:   map[string]registry.PackageVersion{"1.0.0": {}, "1.1.0": {}},
+	}
+	ver := &registry.PackageVersion{
+		License:    "GPL-3.0",
+		Repository: &registry.Repository{URL: "http://github.com/a/b"},
+	}
+
+	findings, err := analyzer.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Title == "Copyleft license detected" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'Copyleft license detected' finding")
+	}
+}
+
+func TestMetadataAnalyzer_UnconventionalLicense(t *testing.T) {
+	analyzer := NewMetadataAnalyzer()
+	pkg := &registry.PackageMetadata{
+		Repository: &registry.Repository{URL: "http://github.com/a/b"},
+		Time:       map[string]time.Time{"created": time.Now().Add(-365 * 24 * time.Hour)},
+		Versions:   map[string]registry.PackageVersion{"1.0.0": {}, "1.1.0": {}},
+	}
+	ver := &registry.PackageVersion{
+		License:    "WTFPL",
+		Repository: &registry.Repository{URL: "http://github.com/a/b"},
+	}
+
+	findings, err := analyzer.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Title == "Unconventional license" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'Unconventional license' finding")
+	}
+}
+
+func TestMetadataAnalyzer_EmptyRepoURL(t *testing.T) {
+	analyzer := NewMetadataAnalyzer()
+	pkg := &registry.PackageMetadata{
+		Time:     map[string]time.Time{"created": time.Now().Add(-365 * 24 * time.Hour)},
+		Versions: map[string]registry.PackageVersion{"1.0.0": {}, "1.1.0": {}},
+	}
+	ver := &registry.PackageVersion{
+		License:    "MIT",
+		Repository: &registry.Repository{URL: ""},
+	}
+
+	findings, err := analyzer.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Title == "Empty repository URL" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'Empty repository URL' finding")
+	}
+}
+
+func TestMetadataAnalyzer_VersionDescriptionFallback(t *testing.T) {
+	analyzer := NewMetadataAnalyzer()
+	pkg := &registry.PackageMetadata{
+		Repository: &registry.Repository{URL: "http://github.com/a/b"},
+		Time:       map[string]time.Time{"created": time.Now().Add(-365 * 24 * time.Hour)},
+		Versions:   map[string]registry.PackageVersion{"1.0.0": {}, "1.1.0": {}},
+	}
+	// version has description, pkg doesn't - should NOT trigger "No description"
+	ver := &registry.PackageVersion{
+		License:     "MIT",
+		Description: "A valid description",
+		Repository:  &registry.Repository{URL: "http://github.com/a/b"},
+	}
+
+	findings, err := analyzer.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findings {
+		if f.Title == "No description" {
+			t.Error("should not report 'No description' when version has description")
+		}
+	}
+}

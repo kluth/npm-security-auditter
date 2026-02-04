@@ -90,6 +90,13 @@ func (r *Reporter) Render(report Report) error {
 	report.Score = CalculateRiskScore(report.Results)
 	report.AuditedAt = time.Now().UTC().Format(time.RFC3339)
 
+	// Sort findings by severity for all formats
+	for i := range report.Results {
+		sort.Slice(report.Results[i].Findings, func(j, k int) bool {
+			return report.Results[i].Findings[j].Severity > report.Results[i].Findings[k].Severity
+		})
+	}
+
 	switch r.format {
 	case FormatJSON:
 		return r.renderJSON(report)
@@ -119,8 +126,9 @@ func (r *Reporter) RenderProject(projectReport ProjectReport) error {
 	}
 
 	// For other formats, we just iterate for now or create a summary
-	fmt.Fprintf(r.writer, "Project Audit: %s\n", projectReport.ProjectName)
-	fmt.Fprintf(r.writer, "Packages Audited: %d\n\n", len(projectReport.Reports))
+	fmt.Fprintln(r.writer, r.T("project_audit", projectReport.ProjectName))
+	fmt.Fprintln(r.writer, r.T("packages_audited", len(projectReport.Reports)))
+	fmt.Fprintln(r.writer)
 
 	for _, report := range projectReport.Reports {
 		if err := r.Render(report); err != nil {
@@ -137,7 +145,7 @@ func (r *Reporter) renderProjectPDF(projectReport ProjectReport) error {
 	
 	pdf.SetHeaderFunc(func() {
 		pdf.SetFont("Arial", "I", 8)
-		pdf.Cell(0, 10, fmt.Sprintf("Project Audit: %s", projectReport.ProjectName))
+		pdf.Cell(0, 10, r.T("project_audit", projectReport.ProjectName))
 		pdf.Ln(10)
 	})
 
@@ -191,7 +199,7 @@ func (r *Reporter) addReportToPDF(pdf *fpdf.Fpdf, report Report) {
 		for _, f := range allFindings {
 			pdf.SetFont("Arial", "B", 10)
 			pdf.SetTextColor(200, 0, 0)
-			pdf.Cell(0, 6, fmt.Sprintf("[%s] %s", f.Severity, f.Title))
+			pdf.Cell(0, 6, fmt.Sprintf("[%s] %s", f.Severity, r.T(f.Title)))
 			pdf.SetTextColor(0, 0, 0)
 			pdf.Ln(6)
 
@@ -200,7 +208,7 @@ func (r *Reporter) addReportToPDF(pdf *fpdf.Fpdf, report Report) {
 			pdf.Ln(6)
 
 			pdf.SetFont("Arial", "", 9)
-			pdf.MultiCell(0, 5, f.Description, "", "", false)
+			pdf.MultiCell(0, 5, r.T(f.Description), "", "", false)
 			pdf.Ln(2)
 
 			if f.ExploitExample != "" {
@@ -209,7 +217,7 @@ func (r *Reporter) addReportToPDF(pdf *fpdf.Fpdf, report Report) {
 				pdf.Ln(6)
 				pdf.SetFont("Courier", "", 8)
 				pdf.SetFillColor(240, 240, 240)
-				pdf.MultiCell(0, 4, f.ExploitExample, "", "", true)
+				pdf.MultiCell(0, 4, r.T(f.ExploitExample), "", "", true)
 				pdf.Ln(2)
 			}
 
@@ -218,7 +226,7 @@ func (r *Reporter) addReportToPDF(pdf *fpdf.Fpdf, report Report) {
 				pdf.Cell(0, 6, r.T("remediation"))
 				pdf.Ln(6)
 				pdf.SetFont("Arial", "", 9)
-				pdf.MultiCell(0, 5, f.Remediation, "", "", false)
+				pdf.MultiCell(0, 5, r.T(f.Remediation), "", "", false)
 				pdf.Ln(2)
 			}
 			pdf.Ln(4)
@@ -312,16 +320,16 @@ func (r *Reporter) renderTerminal(report Report) error {
 	fmt.Fprintf(w, "  %s\n\n", r.T("total_findings", len(allFindings), countActiveAnalyzers(report.Results)))
 
 	if c := severityCounts[analyzer.SeverityCritical]; c > 0 {
-		fmt.Fprintf(w, "  %s%s  %s  %s %d %s\n", colorBold, colorBgRed, r.T("severity_critical"), colorReset, c, r.pluralize(r.T("finding_plural"), c))
+		fmt.Fprintf(w, "  %s%s  %s  %s %d %s\n", colorBold, colorBgRed, r.T("severity_critical"), colorReset, c, r.pluralize(c))
 	}
 	if c := severityCounts[analyzer.SeverityHigh]; c > 0 {
-		fmt.Fprintf(w, "  %s  %s      %s %d %s\n", colorRed, r.T("severity_high"), colorReset, c, r.pluralize(r.T("finding_plural"), c))
+		fmt.Fprintf(w, "  %s  %s      %s %d %s\n", colorRed, r.T("severity_high"), colorReset, c, r.pluralize(c))
 	}
 	if c := severityCounts[analyzer.SeverityMedium]; c > 0 {
-		fmt.Fprintf(w, "  %s  %s    %s %d %s\n", colorYellow, r.T("severity_medium"), colorReset, c, r.pluralize(r.T("finding_plural"), c))
+		fmt.Fprintf(w, "  %s  %s    %s %d %s\n", colorYellow, r.T("severity_medium"), colorReset, c, r.pluralize(c))
 	}
 	if c := severityCounts[analyzer.SeverityLow]; c > 0 {
-		fmt.Fprintf(w, "  %s  %s       %s %d %s\n", colorDim, r.T("severity_low"), colorReset, c, r.pluralize(r.T("finding_plural"), c))
+		fmt.Fprintf(w, "  %s  %s       %s %d %s\n", colorDim, r.T("severity_low"), colorReset, c, r.pluralize(c))
 	}
 	fmt.Fprintln(w)
 
@@ -346,14 +354,14 @@ func (r *Reporter) renderTerminal(report Report) error {
 
 		for i, f := range findings {
 			fmt.Fprintf(w, "\n  %s%s%s %s%s\n",
-				colorBold, sevColor, severityIcon(sev), f.Title, colorReset)
+				colorBold, sevColor, severityIcon(sev), r.T(f.Title), colorReset)
 			fmt.Fprintf(w, "  %s%s%s\n", colorDim, r.T("analyzer_label", f.Analyzer), colorReset)
-			r.printWrapped(w, f.Description, "  ", reportWidth)
+			r.printWrapped(w, r.T(f.Description), "  ", reportWidth)
 
 			if f.ExploitExample != "" {
 				fmt.Fprintln(w)
 				fmt.Fprintf(w, "  %s%s%s%s\n", colorBold, colorMagenta, r.T("attack_scenario"), colorReset)
-				for _, line := range strings.Split(f.ExploitExample, "\n") {
+				for _, line := range strings.Split(r.T(f.ExploitExample), "\n") {
 					fmt.Fprintf(w, "  %s%s%s\n", colorMagenta, line, colorReset)
 				}
 			}
@@ -361,7 +369,7 @@ func (r *Reporter) renderTerminal(report Report) error {
 			if f.Remediation != "" {
 				fmt.Fprintln(w)
 				fmt.Fprintf(w, "  %s%s%s%s\n", colorBold, colorGreen, r.T("remediation"), colorReset)
-				r.printWrapped(w, f.Remediation, "  ", reportWidth)
+				r.printWrapped(w, r.T(f.Remediation), "  ", reportWidth)
 			}
 
 			if i < len(findings)-1 {
@@ -413,14 +421,14 @@ func (r *Reporter) renderMarkdown(report Report) error {
 		// ... simpler markdown for now
 		fmt.Fprintf(w, "\n### %s\n\n", r.T("findings_summary"))
 		for _, f := range allFindings {
-			fmt.Fprintf(w, "#### [%s] %s\n", f.Severity, f.Title)
+			fmt.Fprintf(w, "#### [%s] %s\n", f.Severity, r.T(f.Title))
 			fmt.Fprintf(w, "*%s*\n\n", r.T("analyzer_label", f.Analyzer))
-			fmt.Fprintf(w, "%s\n\n", f.Description)
+			fmt.Fprintf(w, "%s\n\n", r.T(f.Description))
 			if f.ExploitExample != "" {
-				fmt.Fprintf(w, "**%s**\n\n```\n%s\n```\n\n", r.T("attack_scenario"), f.ExploitExample)
+				fmt.Fprintf(w, "**%s**\n\n```\n%s\n```\n\n", r.T("attack_scenario"), r.T(f.ExploitExample))
 			}
 			if f.Remediation != "" {
-				fmt.Fprintf(w, "**%s**\n\n%s\n\n", r.T("remediation"), f.Remediation)
+				fmt.Fprintf(w, "**%s**\n\n%s\n\n", r.T("remediation"), r.T(f.Remediation))
 			}
 		}
 	}
@@ -445,14 +453,14 @@ func (r *Reporter) renderHTML(report Report) error {
 	if len(allFindings) > 0 {
 		fmt.Fprintf(w, "<h2>%s</h2>", r.T("findings_summary"))
 		for _, f := range allFindings {
-			fmt.Fprintf(w, "<div class='%s'><h3>[%s] %s</h3>", strings.ToLower(f.Severity.String()), f.Severity, f.Title)
+			fmt.Fprintf(w, "<div class='%s'><h3>[%s] %s</h3>", strings.ToLower(f.Severity.String()), f.Severity, r.T(f.Title))
 			fmt.Fprintf(w, "<p><i>%s</i></p>", r.T("analyzer_label", f.Analyzer))
-			fmt.Fprintf(w, "<p>%s</p>", f.Description)
+			fmt.Fprintf(w, "<p>%s</p>", r.T(f.Description))
 			if f.ExploitExample != "" {
-				fmt.Fprintf(w, "<h4>%s</h4><pre>%s</pre>", r.T("attack_scenario"), f.ExploitExample)
+				fmt.Fprintf(w, "<h4>%s</h4><pre>%s</pre>", r.T("attack_scenario"), r.T(f.ExploitExample))
 			}
 			if f.Remediation != "" {
-				fmt.Fprintf(w, "<h4>%s</h4><p>%s</p>", r.T("remediation"), f.Remediation)
+				fmt.Fprintf(w, "<h4>%s</h4><p>%s</p>", r.T("remediation"), r.T(f.Remediation))
 			}
 			fmt.Fprintf(w, "</div>")
 		}
@@ -464,7 +472,7 @@ func (r *Reporter) renderHTML(report Report) error {
 func (r *Reporter) renderCSV(report Report) error {
 	w := r.writer
 	allFindings := collectFindings(report.Results)
-	fmt.Fprintln(w, "Severity,Analyzer,Title,Description")
+	fmt.Fprintf(w, "%s,%s,%s,%s\n", r.T("csv_severity"), r.T("csv_analyzer"), r.T("csv_title"), r.T("csv_description"))
 	for _, f := range allFindings {
 		fmt.Fprintf(w, "%s,%s,\"%s\",\"%s\"\n", f.Severity, f.Analyzer, strings.ReplaceAll(f.Title, "\"", "\"\""), strings.ReplaceAll(f.Description, "\"", "\"\""))
 	}
@@ -598,16 +606,16 @@ func (r *Reporter) printAnalyzerBreakdown(w io.Writer, results []analyzer.Result
 		if e.total > 0 {
 			parts := []string{}
 			if e.critical > 0 {
-				parts = append(parts, fmt.Sprintf("%dC", e.critical))
+				parts = append(parts, fmt.Sprintf("%d%s", e.critical, r.T("severity_critical_short")))
 			}
 			if e.high > 0 {
-				parts = append(parts, fmt.Sprintf("%dH", e.high))
+				parts = append(parts, fmt.Sprintf("%d%s", e.high, r.T("severity_high_short")))
 			}
 			if e.medium > 0 {
-				parts = append(parts, fmt.Sprintf("%dM", e.medium))
+				parts = append(parts, fmt.Sprintf("%d%s", e.medium, r.T("severity_medium_short")))
 			}
 			if e.low > 0 {
-				parts = append(parts, fmt.Sprintf("%dL", e.low))
+				parts = append(parts, fmt.Sprintf("%d%s", e.low, r.T("severity_low_short")))
 			}
 			fmt.Fprintf(w, " (%s)", strings.Join(parts, " "))
 		} else {
@@ -679,20 +687,11 @@ func severityColorForCount(e struct {
 	return colorDim
 }
 
-func (r *Reporter) pluralize(word string, count int) string {
+func (r *Reporter) pluralize(count int) string {
 	if count == 1 {
-		return word
+		return r.T("finding_plural")
 	}
-	// This is a very simple pluralization for English.
-	// For other languages it might need more logic.
-	if r.lang == LangEN {
-		return word + "s"
-	}
-	// For DE, "Befund" -> "Befunde" (already handled by T key if we wanted, but let's keep it simple)
-	if r.lang == LangDE {
-		return r.T("findings_plural")
-	}
-	return word
+	return r.T("findings_plural")
 }
 
 func (r *Reporter) generateRecommendations(score int, findings []analyzer.Finding) []string {

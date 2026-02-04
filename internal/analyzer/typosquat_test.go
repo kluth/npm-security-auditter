@@ -66,6 +66,63 @@ func TestLevenshteinDistance(t *testing.T) {
 	}
 }
 
+func TestTyposquatAnalyzer_Distance2(t *testing.T) {
+	// Test a package name with distance 2 from a popular package
+	analyzer := NewTyposquatAnalyzer()
+	pkg := &registry.PackageMetadata{Name: "lodahs"} // distance 2 from lodash
+	ver := &registry.PackageVersion{Version: "1.0.0"}
+	findings, err := analyzer.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Severity == SeverityMedium {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected SeverityMedium for distance 2 typosquat")
+	}
+}
+
+func TestTyposquatAnalyzer_PatternOnly(t *testing.T) {
+	// Test a package that triggers pattern detection but NOT levenshtein
+	analyzer := NewTyposquatAnalyzer()
+	pkg := &registry.PackageMetadata{Name: "express-js"} // affix variant of express
+	ver := &registry.PackageVersion{Version: "1.0.0"}
+	findings, err := analyzer.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundPattern := false
+	for _, f := range findings {
+		if f.Title == "Typosquatting pattern detected" {
+			foundPattern = true
+		}
+	}
+	if !foundPattern {
+		t.Error("expected typosquatting pattern finding for express-js")
+	}
+}
+
+func TestNormalizeName(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"express", "express"},
+		{"@scope/pkg", "pkg"},
+		{"MyPkg", "mypkg"},
+	}
+	for _, tt := range tests {
+		got := normalizeName(tt.input)
+		if got != tt.want {
+			t.Errorf("normalizeName(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestDetectTyposquatPattern(t *testing.T) {
 	tests := []struct {
 		name    string

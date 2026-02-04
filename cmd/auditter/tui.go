@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -15,6 +17,30 @@ import (
 	"github.com/kluth/npm-security-auditter/internal/registry"
 	"github.com/kluth/npm-security-auditter/internal/reporter"
 )
+
+var (
+	logoStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("205")).
+			Bold(true).
+			MarginBottom(1)
+
+	headerStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("81")).
+			Bold(true).
+			MarginBottom(1)
+
+	focusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+)
+
+const logo = `
+    ___             _ _ _   _            
+   / _ \           | (_) | | |           
+  / /_\ \_   _  __| |_| |_| |_ ___ _ __  
+  |  _  | | | |/ _` + "`" + ` | | __| __/ _ \ '__| 
+  | | | | |_| | (_| | | |_| ||  __/ |    
+  \_| |_/\__,_|\__,_|_|\__|\__\___|_|    
+`
 
 type model struct {
 	state          sessionState
@@ -45,7 +71,9 @@ func initialModel() model {
 	ti.Placeholder = "lodash"
 	ti.Focus()
 	ti.CharLimit = 156
-	ti.Width = 20
+	ti.Width = 30
+	ti.PromptStyle = focusedStyle
+	ti.TextStyle = focusedStyle
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -70,8 +98,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "esc":
+		case "ctrl+c":
 			return m, tea.Quit
+		case "esc":
+			if m.state == stateConfig {
+				m.state = stateInput
+				return m, nil
+			}
+			return m, tea.Quit
+		case "backspace":
+			if m.state == stateConfig {
+				m.state = stateInput
+				return m, nil
+			}
 		case "enter":
 			if m.state == stateInput {
 				m.pkgName = m.pkgInput.Value()
@@ -81,8 +120,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.state == stateConfig {
-				m.state = stateRunning
-				return m, m.runAudit
+				if m.cursor == 2 {
+					m.state = stateRunning
+					return m, m.runAudit
+				}
 			}
 			if m.state == stateDone {
 				return m, tea.Quit
@@ -121,7 +162,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateDone
 		m.resultMsg = msg.summary
 		m.reportContent = msg.content
-		return m, tea.Quit // For now, just quit after audit, or we could show result
+		return m, nil // Don't quit immediately so user can see result
 	}
 
 	if m.state == stateInput {
@@ -140,49 +181,59 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	var s strings.Builder
 
+	s.WriteString(logoStyle.Render(logo))
+	s.WriteString("\n")
+
 	switch m.state {
 	case stateInput:
-		s.WriteString("Enter package name to audit:\n\n")
+		s.WriteString(headerStyle.Render("Package Audit Selection"))
+		s.WriteString("\n\nEnter package name to audit:\n\n")
 		s.WriteString(m.pkgInput.View())
-		s.WriteString("\n\n(esc to quit)")
+		s.WriteString("\n\n" + dimStyle.Render("(esc to quit, enter to continue)"))
 
 	case stateConfig:
-		s.WriteString(fmt.Sprintf("Configuration for %s:\n\n", m.pkgName))
+		s.WriteString(headerStyle.Render(fmt.Sprintf("Audit Configuration: %s", m.pkgName)))
+		s.WriteString("\n\n")
 
 		// Format selection
 		s.WriteString("Output Format: ")
 		if m.cursor == 0 {
-			s.WriteString("> ")
+			s.WriteString(focusedStyle.Render("> " + m.formats[m.selectedFormat]))
 		} else {
-			s.WriteString("  ")
+			s.WriteString("  " + m.formats[m.selectedFormat])
 		}
-		s.WriteString(m.formats[m.selectedFormat])
-		s.WriteString(fmt.Sprintf(" [%d/%d]", m.selectedFormat+1, len(m.formats)))
+		s.WriteString(dimStyle.Render(fmt.Sprintf(" [%d/%d]", m.selectedFormat+1, len(m.formats))))
 		s.WriteString("\n")
 
 		// Language selection
 		s.WriteString("Language:      ")
 		if m.cursor == 1 {
-			s.WriteString("> ")
+			s.WriteString(focusedStyle.Render("> " + m.langs[m.selectedLang]))
 		} else {
-			s.WriteString("  ")
+			s.WriteString("  " + m.langs[m.selectedLang])
 		}
-		s.WriteString(m.langs[m.selectedLang])
-		s.WriteString(fmt.Sprintf(" [%d/%d]", m.selectedLang+1, len(m.langs)))
+		s.WriteString(dimStyle.Render(fmt.Sprintf(" [%d/%d]", m.selectedLang+1, len(m.langs))))
 		s.WriteString("\n\n")
 
 		if m.cursor == 2 {
-			s.WriteString("> [ Start Audit ]")
+			s.WriteString(focusedStyle.Render("> [ Start Audit ]"))
 		} else {
 			s.WriteString("  [ Start Audit ]")
 		}
-		s.WriteString("\n\n(use arrows to navigate, enter to select)")
+		s.WriteString("\n\n" + dimStyle.Render("(arrows to navigate, esc to go back, enter to start)"))
 
 	case stateRunning:
-		s.WriteString(fmt.Sprintf("\n %s Auditing %s...\n\n", m.spinner.View(), m.pkgName))
+		s.WriteString(headerStyle.Render(fmt.Sprintf("Auditing %s", m.pkgName)))
+		s.WriteString(fmt.Sprintf("\n\n %s Analyzing package metrics and security patterns...\n\n", m.spinner.View()))
 
 	case stateDone:
-		s.WriteString(fmt.Sprintf("\nAudit Complete!\n\n%s\n", m.resultMsg))
+		s.WriteString(headerStyle.Render("Audit Complete"))
+		s.WriteString(fmt.Sprintf("\n\n%s\n\n", m.resultMsg))
+		if m.reportContent != "" {
+			s.WriteString(m.reportContent)
+			s.WriteString("\n\n")
+		}
+		s.WriteString(dimStyle.Render("(press any key to exit)"))
 	}
 
 	return s.String()
@@ -224,6 +275,7 @@ func (m model) runAudit() tea.Msg {
 		analyzer.NewProvenanceAnalyzer(),
 		analyzer.NewTarballAnalyzer(),
 		analyzer.NewRepoVerifierAnalyzer(),
+		analyzer.NewIssuesAnalyzer(),
 	}
 	if !noSandbox {
 		analyzers = append(analyzers, analyzer.NewSandboxAnalyzer())
@@ -235,6 +287,12 @@ func (m model) runAudit() tea.Msg {
 		TotalVersions: len(pkg.Versions),
 		Dependencies:  len(version.Dependencies),
 		HasScripts:    hasInstallScripts(&version),
+	}
+	for _, m := range pkg.Maintainers {
+		info.Maintainers = append(info.Maintainers, m.Name)
+	}
+	if pkg.Repository != nil && pkg.Repository.URL != "" {
+		info.RepoURL = pkg.Repository.URL
 	}
 	if created, ok := pkg.Time["created"]; ok {
 		info.CreatedAt = created.Format("2006-01-02")
@@ -250,28 +308,44 @@ func (m model) runAudit() tea.Msg {
 	format := m.formats[m.selectedFormat]
 	lang := reporter.Language(m.langs[m.selectedLang])
 
-	// Render to file or stdout simulation
-	// For TUI, we might want to write to a file directly if it's PDF/HTML
-	filename := fmt.Sprintf("audit-%s.%s", m.pkgName, format)
-	if format == "terminal" {
-		filename = "stdout" // special case
-	}
+	// Sanitize filename for scoped packages
+	safePkgName := strings.ReplaceAll(m.pkgName, "/", "-")
+	safePkgName = strings.ReplaceAll(safePkgName, "@", "")
+	filename := fmt.Sprintf("audit-%s.%s", safePkgName, format)
 	
-	f, err := os.Create(filename)
-	if err != nil {
-		return auditResultMsg{summary: fmt.Sprintf("Error creating file: %v", err)}
-	}
-	defer f.Close()
+	var out io.Writer
+	var buf bytes.Buffer
+	var isTerminal bool
 
-	rep := reporter.New(f, format, lang)
+	if format == "terminal" {
+		isTerminal = true
+		out = &buf
+	} else {
+		f, err := os.Create(filename)
+		if err != nil {
+			return auditResultMsg{summary: fmt.Sprintf("Error creating file: %v", err)}
+		}
+		defer f.Close()
+		out = f
+	}
+
+	rep := reporter.New(out, format, lang)
 	if err := rep.Render(report); err != nil {
 		return auditResultMsg{summary: fmt.Sprintf("Error rendering: %v", err)}
 	}
 
-	msg := fmt.Sprintf("Report saved to %s", filename)
-	if format == "terminal" {
-		msg = "Audit finished. Check output." // Terminal output capture is tricky here
+	const colorReset = "\033[0m"
+	scoreColor, scoreLabel := rep.GetRiskLevel(report.Score)
+	summary := fmt.Sprintf("Audit Score: %s%d/100 (%s)%s\n", scoreColor, report.Score, scoreLabel, colorReset)
+	
+	if isTerminal {
+		return auditResultMsg{
+			summary: summary + "Report generated below:",
+			content: buf.String(),
+		}
 	}
 
-	return auditResultMsg{summary: msg}
+	return auditResultMsg{
+		summary: summary + fmt.Sprintf("Report saved to %s", filename),
+	}
 }

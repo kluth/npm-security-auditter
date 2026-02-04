@@ -360,6 +360,369 @@ func TestRepoVerifierAnalyzer_AnalyzeNoRepo(t *testing.T) {
 	_ = findings
 }
 
+func TestRepoVerifierAnalyzer_VersionRepoFallback(t *testing.T) {
+	// pkg has no repo, version does
+	client := &http.Client{
+		Transport: &MockTransport{Handlers: map[string]func(*http.Request) (*http.Response, error){
+			"https://api.github.com/repos/owner/repo": func(r *http.Request) (*http.Response, error) {
+				resp := ghRepoResponse{FullName: "owner/repo"}
+				body, _ := json.Marshal(resp)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewReader(body)),
+					Header:     make(http.Header),
+				}, nil
+			},
+			"https://api.github.com/repos/owner/repo/readme": func(r *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 404, Body: io.NopCloser(bytes.NewBufferString("")), Header: make(http.Header)}, nil
+			},
+		}},
+	}
+	a := &RepoVerifierAnalyzer{httpClient: client}
+	pkg := &registry.PackageMetadata{Name: "test"} // no repository
+	ver := &registry.PackageVersion{
+		Name:       "test",
+		Version:    "1.0.0",
+		Repository: &registry.Repository{URL: "https://github.com/owner/repo"},
+	}
+
+	findings, err := a.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should not have "Unparseable repository URL"
+	for _, f := range findings {
+		if f.Title == "Unparseable repository URL" {
+			t.Error("should not have unparseable URL when version repo is valid")
+		}
+	}
+}
+
+func TestRepoVerifierAnalyzer_NonHTTPHomepage(t *testing.T) {
+	a := NewRepoVerifierAnalyzer()
+	findings := a.checkHomepage(context.Background(), "ftp://example.com")
+	if len(findings) != 0 {
+		t.Error("non-http homepage should be ignored")
+	}
+}
+
+func TestRepoVerifierAnalyzer_HomepageWithEmptyURL(t *testing.T) {
+	a := NewRepoVerifierAnalyzer()
+	pkg := &registry.PackageMetadata{Name: "test"}
+	ver := &registry.PackageVersion{Name: "test", Version: "1.0.0", Homepage: ""}
+
+	findings, err := a.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findings {
+		if f.Title == "Homepage unreachable" || f.Title == "Homepage returns 404" {
+			t.Error("should not check empty homepage")
+		}
+	}
+}
+
+func TestParseRepoURL_GitAtIncomplete(t *testing.T) {
+	owner, repo, platform := parseRepoURL("git@github.com:onlyowner")
+	if owner != "" || repo != "" || platform != "" {
+		t.Errorf("expected empty for incomplete git@ URL, got (%q, %q, %q)", owner, repo, platform)
+	}
+}
+
+func TestParseRepoURL_TooFewParts(t *testing.T) {
+	owner, repo, platform := parseRepoURL("https://example.com")
+	if owner != "" || repo != "" {
+		t.Errorf("expected empty for URL with too few parts, got (%q, %q, %q)", owner, repo, platform)
+	}
+}
+
+func TestHostToPlatform(t *testing.T) {
+	tests := []struct {
+		host     string
+		expected string
+	}{
+		{"github.com", "github"},
+		{"gitlab.com", "gitlab"},
+		{"bitbucket.org", "bitbucket"},
+		{"example.com", "unknown"},
+	}
+	for _, tt := range tests {
+		got := hostToPlatform(tt.host)
+		if got != tt.expected {
+			t.Errorf("hostToPlatform(%q) = %q, want %q", tt.host, got, tt.expected)
+		}
+	}
+}
+
+func TestRepoVerifierAnalyzer_GitHubNon200(t *testing.T) {
+	// Test non-200/404/403 status
+	client := &http.Client{
+		Transport: &MockTransport{Handlers: map[string]func(*http.Request) (*http.Response, error){
+			"https://api.github.com/repos/owner/repo": func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusInternalServerError,
+					Body:       io.NopCloser(bytes.NewBufferString("")),
+					Header:     make(http.Header),
+				}, nil
+			},
+		}},
+	}
+	a := &RepoVerifierAnalyzer{httpClient: client}
+	pkg := &registry.PackageMetadata{
+		Name:       "test",
+		Repository: &registry.Repository{URL: "https://github.com/owner/repo"},
+	}
+	ver := &registry.PackageVersion{Name: "test", Version: "1.0.0"}
+
+	findings, err := a.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should return no findings for 500 (just silently skip)
+	for _, f := range findings {
+		if f.Title == "Repository not found" || f.Title == "GitHub API rate limited" {
+			t.Error("should not report 404/403 findings for 500")
+		}
+	}
+}
+
+func TestRepoVerifierAnalyzer_CompareReadme_EmptyNpmReadme(t *testing.T) {
+	a := NewRepoVerifierAnalyzer()
+	findings := a.compareReadme(context.Background(), "owner", "repo", "")
+	if len(findings) != 0 {
+		t.Error("expected no findings when npm readme is empty")
+	}
+}
+
+func TestRepoVerifierAnalyzer_CompareReadme_Match(t *testing.T) {
+	client := &http.Client{
+		Transport: &MockTransport{Handlers: map[string]func(*http.Request) (*http.Response, error){
+			"https://api.github.com/repos/owner/repo/readme": func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewBufferString("# My Package\nThis is a test utility library for Node.js")),
+					Header:     make(http.Header),
+				}, nil
+			},
+		}},
+	}
+	a := &RepoVerifierAnalyzer{httpClient: client}
+	findings := a.compareReadme(context.Background(), "owner", "repo", "# My Package\nThis is a test utility library for Node.js")
+	if len(findings) != 0 {
+		t.Error("expected no findings when readmes match")
+	}
+}
+
+func TestRepoVerifierAnalyzer_CompareReadme_Mismatch(t *testing.T) {
+	client := &http.Client{
+		Transport: &MockTransport{Handlers: map[string]func(*http.Request) (*http.Response, error){
+			"https://api.github.com/repos/owner/repo/readme": func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewBufferString("Completely different readme about something else entirely")),
+					Header:     make(http.Header),
+				}, nil
+			},
+		}},
+	}
+	a := &RepoVerifierAnalyzer{httpClient: client}
+	findings := a.compareReadme(context.Background(), "owner", "repo", "My original package documentation for a utility library")
+	found := false
+	for _, f := range findings {
+		if f.Title == "README mismatch between npm and GitHub" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected README mismatch finding")
+	}
+}
+
+func TestRepoVerifierAnalyzer_CompareReadme_APIError(t *testing.T) {
+	client := &http.Client{
+		Transport: &MockTransport{Handlers: map[string]func(*http.Request) (*http.Response, error){
+			"https://api.github.com/repos/owner/repo/readme": func(r *http.Request) (*http.Response, error) {
+				return nil, fmt.Errorf("connection refused")
+			},
+		}},
+	}
+	a := &RepoVerifierAnalyzer{httpClient: client}
+	findings := a.compareReadme(context.Background(), "owner", "repo", "some readme")
+	if len(findings) != 0 {
+		t.Error("expected no findings for API error in compareReadme")
+	}
+}
+
+func TestRepoVerifierAnalyzer_CompareReadme_Non200(t *testing.T) {
+	client := &http.Client{
+		Transport: &MockTransport{Handlers: map[string]func(*http.Request) (*http.Response, error){
+			"https://api.github.com/repos/owner/repo/readme": func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Body:       io.NopCloser(bytes.NewBufferString("")),
+					Header:     make(http.Header),
+				}, nil
+			},
+		}},
+	}
+	a := &RepoVerifierAnalyzer{httpClient: client}
+	findings := a.compareReadme(context.Background(), "owner", "repo", "some readme")
+	if len(findings) != 0 {
+		t.Error("expected no findings for non-200 status in compareReadme")
+	}
+}
+
+func TestRepoVerifierAnalyzer_HomepageUnreachable(t *testing.T) {
+	client := &http.Client{
+		Transport: &MockTransport{Handlers: map[string]func(*http.Request) (*http.Response, error){
+			"https://unreachable.example.com/": func(r *http.Request) (*http.Response, error) {
+				return nil, fmt.Errorf("no such host")
+			},
+		}},
+	}
+	a := &RepoVerifierAnalyzer{httpClient: client}
+	findings := a.checkHomepage(context.Background(), "https://unreachable.example.com/")
+	found := false
+	for _, f := range findings {
+		if f.Title == "Homepage unreachable" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'Homepage unreachable' finding")
+	}
+}
+
+func TestRepoVerifierAnalyzer_AnalyzeWithHomepage(t *testing.T) {
+	client := &http.Client{
+		Transport: &MockTransport{Handlers: map[string]func(*http.Request) (*http.Response, error){
+			"https://example.com/": func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewBufferString("")),
+					Header:     make(http.Header),
+				}, nil
+			},
+		}},
+	}
+	a := &RepoVerifierAnalyzer{httpClient: client}
+	pkg := &registry.PackageMetadata{Name: "test"}
+	ver := &registry.PackageVersion{
+		Name:     "test",
+		Version:  "1.0.0",
+		Homepage: "https://example.com/",
+	}
+
+	findings, err := a.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Homepage is reachable, no repo -> should have no findings
+	for _, f := range findings {
+		if f.Title == "Homepage unreachable" || f.Title == "Homepage returns 404" {
+			t.Error("homepage is reachable, should not have homepage findings")
+		}
+	}
+}
+
+func TestRepoVerifierAnalyzer_GitHubTooManyRequests(t *testing.T) {
+	client := &http.Client{
+		Transport: &MockTransport{Handlers: map[string]func(*http.Request) (*http.Response, error){
+			"https://api.github.com/repos/owner/repo": func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusTooManyRequests,
+					Body:       io.NopCloser(bytes.NewBufferString("")),
+					Header:     make(http.Header),
+				}, nil
+			},
+		}},
+	}
+	a := &RepoVerifierAnalyzer{httpClient: client}
+	pkg := &registry.PackageMetadata{
+		Name:       "test",
+		Repository: &registry.Repository{URL: "https://github.com/owner/repo"},
+	}
+	ver := &registry.PackageVersion{Name: "test", Version: "1.0.0"}
+
+	findings, err := a.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Title == "GitHub API rate limited" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected rate limited finding for 429 status")
+	}
+}
+
+func TestRepoVerifierAnalyzer_GitHubInvalidJSON(t *testing.T) {
+	client := &http.Client{
+		Transport: &MockTransport{Handlers: map[string]func(*http.Request) (*http.Response, error){
+			"https://api.github.com/repos/owner/repo": func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewBufferString("{invalid json")),
+					Header:     make(http.Header),
+				}, nil
+			},
+		}},
+	}
+	a := &RepoVerifierAnalyzer{httpClient: client}
+	findings := a.verifyGitHub(context.Background(), "owner", "repo", &registry.PackageMetadata{}, &registry.PackageVersion{})
+	// Invalid JSON should result in no findings (silently skipped)
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings for invalid JSON, got %d", len(findings))
+	}
+}
+
+func TestJaccardWordSimilarity_BothEmpty(t *testing.T) {
+	// Both empty should return 1.0
+	sim := jaccardWordSimilarity("", "")
+	if sim != 1.0 {
+		t.Errorf("expected 1.0 for both empty, got %f", sim)
+	}
+}
+
+func TestRepoVerifierAnalyzer_AnalyzeNoHomepageWithRepo(t *testing.T) {
+	// No homepage but pkg has repository -> skip homepage check (line 59-60)
+	client := &http.Client{
+		Transport: &MockTransport{Handlers: map[string]func(*http.Request) (*http.Response, error){
+			"https://api.github.com/repos/owner/repo": func(r *http.Request) (*http.Response, error) {
+				resp := ghRepoResponse{FullName: "owner/repo"}
+				body, _ := json.Marshal(resp)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewReader(body)),
+					Header:     make(http.Header),
+				}, nil
+			},
+			"https://api.github.com/repos/owner/repo/readme": func(r *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 404, Body: io.NopCloser(bytes.NewBufferString("")), Header: make(http.Header)}, nil
+			},
+		}},
+	}
+	a := &RepoVerifierAnalyzer{httpClient: client}
+	pkg := &registry.PackageMetadata{
+		Name:       "test",
+		Repository: &registry.Repository{URL: "https://github.com/owner/repo"},
+	}
+	ver := &registry.PackageVersion{Name: "test", Version: "1.0.0", Homepage: ""}
+
+	findings, err := a.Analyze(context.Background(), pkg, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findings {
+		if f.Title == "Homepage unreachable" || f.Title == "Homepage returns 404" {
+			t.Error("should not check homepage when empty and repo exists")
+		}
+	}
+}
+
 func TestRepoVerifierAnalyzer_VerifyGitHubArchived(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/owner/repo" {
