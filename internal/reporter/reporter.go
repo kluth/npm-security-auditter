@@ -163,77 +163,107 @@ func (r *Reporter) renderProjectPDF(projectReport ProjectReport) error {
 
 func (r *Reporter) addReportToPDF(pdf *fpdf.Fpdf, report Report) {
 	pdf.AddPage()
-	pdf.SetFont("Arial", "B", 16)
-	pdf.Cell(40, 10, r.T("title"))
-	pdf.Ln(12)
+	
+	// Set primary colors
+	red := []int{215, 58, 73}
+	gray := []int{106, 115, 125}
+	dark := []int{36, 41, 46}
 
+	pdf.SetFont("Arial", "B", 20)
+	pdf.SetTextColor(dark[0], dark[1], dark[2])
+	pdf.Cell(0, 15, r.T("title"))
+	pdf.Ln(15)
+
+	// Summary Card
+	pdf.SetFillColor(246, 248, 250)
+	pdf.Rect(10, pdf.GetY(), 190, 40, "F")
 	pdf.SetFont("Arial", "B", 12)
-	pdf.Cell(40, 10, r.T("pkg_info"))
+	pdf.SetY(pdf.GetY() + 5)
+	pdf.Cell(0, 8, "  " + r.T("pkg_info"))
 	pdf.Ln(8)
 	pdf.SetFont("Arial", "", 10)
-	pdf.Cell(0, 6, fmt.Sprintf("%s: %s@%s", r.T("package"), report.Package, report.Version))
+	pdf.Cell(0, 6, "    " + fmt.Sprintf("%s: %s@%s", r.T("package"), report.Package, report.Version))
 	pdf.Ln(6)
 	if report.Info.License != "" {
-		pdf.Cell(0, 6, fmt.Sprintf("%s: %s", r.T("license"), report.Info.License))
+		pdf.Cell(0, 6, "    " + fmt.Sprintf("%s: %s", r.T("license"), report.Info.License))
 		pdf.Ln(6)
 	}
-	pdf.Cell(0, 6, fmt.Sprintf("%s: %d %s", r.T("versions"), report.Info.TotalVersions, r.T("published")))
-	pdf.Ln(6)
-	pdf.Cell(0, 6, fmt.Sprintf("%s: %d %s", r.T("dependencies"), report.Info.Dependencies, r.T("direct")))
-	pdf.Ln(10)
+	pdf.Cell(0, 6, "    " + fmt.Sprintf("%s: %d %s", r.T("versions"), report.Info.TotalVersions, r.T("published")))
+	pdf.Ln(12)
 
+	// Risk Assessment
 	_, scoreLabel := r.GetRiskLevel(report.Score)
 	pdf.SetFont("Arial", "B", 12)
-	pdf.Cell(40, 10, r.T("risk_assessment"))
+	pdf.Cell(0, 8, r.T("risk_assessment"))
 	pdf.Ln(8)
-	pdf.SetFont("Arial", "", 10)
-	pdf.Cell(0, 6, fmt.Sprintf("%s (%s)", scoreLabel, r.T("score_label", report.Score)))
-	pdf.Ln(10)
+	pdf.SetFont("Arial", "B", 14)
+	pdf.SetTextColor(red[0], red[1], red[2])
+	pdf.Cell(0, 8, fmt.Sprintf("%s (%d/100)", scoreLabel, report.Score))
+	pdf.SetTextColor(dark[0], dark[1], dark[2])
+	pdf.Ln(12)
 
 	allFindings := collectFindings(report.Results)
 	if len(allFindings) > 0 {
 		pdf.SetFont("Arial", "B", 12)
-		pdf.Cell(40, 10, r.T("findings_summary"))
+		pdf.Cell(0, 10, r.T("findings_summary"))
 		pdf.Ln(10)
 
 		for _, f := range allFindings {
-			pdf.SetFont("Arial", "B", 10)
-			pdf.SetTextColor(200, 0, 0)
-			pdf.Cell(0, 6, fmt.Sprintf("[%s] %s", f.Severity, r.T(f.Title)))
-			pdf.SetTextColor(0, 0, 0)
+			// Finding Header
+			pdf.SetFont("Arial", "B", 11)
+			if f.Severity >= analyzer.SeverityHigh {
+				pdf.SetTextColor(red[0], red[1], red[2])
+			} else {
+				pdf.SetTextColor(227, 98, 9)
+			}
+			pdf.Cell(0, 8, fmt.Sprintf("[%s] %s", f.Severity, r.T(f.Title)))
+			pdf.SetTextColor(gray[0], gray[1], gray[2])
 			pdf.Ln(6)
-
 			pdf.SetFont("Arial", "I", 9)
 			pdf.Cell(0, 6, r.T("analyzer_label", f.Analyzer))
 			pdf.Ln(6)
 
-			pdf.SetFont("Arial", "", 9)
+			// Description
+			pdf.SetTextColor(dark[0], dark[1], dark[2])
+			pdf.SetFont("Arial", "", 10)
 			pdf.MultiCell(0, 5, r.T(f.Description), "", "", false)
 			pdf.Ln(2)
 
+			// Exploit Box
 			if f.ExploitExample != "" {
 				pdf.SetFont("Arial", "B", 9)
-				pdf.Cell(0, 6, r.T("attack_scenario"))
+				pdf.SetTextColor(red[0], red[1], red[2])
+				pdf.Cell(0, 6, " " + r.T("attack_scenario"))
 				pdf.Ln(6)
-				pdf.SetFont("Courier", "", 8)
-				pdf.SetFillColor(240, 240, 240)
-				pdf.MultiCell(0, 4, r.T(f.ExploitExample), "", "", true)
+				
+				pdf.SetFont("Courier", "", 9)
+				pdf.SetFillColor(47, 54, 61)
+				pdf.SetTextColor(250, 251, 252)
+				pdf.MultiCell(0, 5, r.T(f.ExploitExample), "", "", true)
 				pdf.Ln(2)
 			}
 
+			// Remediation Box
 			if f.Remediation != "" {
 				pdf.SetFont("Arial", "B", 9)
-				pdf.Cell(0, 6, r.T("remediation"))
+				pdf.SetTextColor(40, 167, 69)
+				pdf.Cell(0, 6, " " + r.T("remediation"))
 				pdf.Ln(6)
-				pdf.SetFont("Arial", "", 9)
-				pdf.MultiCell(0, 5, r.T(f.Remediation), "", "", false)
+				
+				pdf.SetFillColor(225, 245, 254)
+				pdf.SetTextColor(3, 169, 244)
+				pdf.SetFont("Arial", "", 10)
+				pdf.MultiCell(0, 5, r.T(f.Remediation), "", "", true)
 				pdf.Ln(2)
 			}
+			pdf.Ln(6)
+			pdf.SetDrawColor(234, 236, 239)
+			pdf.Line(10, pdf.GetY(), 200, pdf.GetY())
 			pdf.Ln(4)
 		}
 	} else {
 		pdf.SetFont("Arial", "I", 10)
-		pdf.SetTextColor(0, 128, 0)
+		pdf.SetTextColor(40, 167, 69)
 		pdf.Cell(0, 10, r.T("no_issues"))
 	}
 }
@@ -248,6 +278,7 @@ func (r *Reporter) renderTerminal(report Report) error {
 	w := r.writer
 
 	// ── Title Box ──
+	r.printLogo(w)
 	r.printBox(w, " "+r.T("title"), colorCyan)
 	fmt.Fprintln(w)
 
@@ -361,9 +392,27 @@ func (r *Reporter) renderTerminal(report Report) error {
 			if f.ExploitExample != "" {
 				fmt.Fprintln(w)
 				fmt.Fprintf(w, "  %s%s%s%s\n", colorBold, colorMagenta, r.T("attack_scenario"), colorReset)
-				for _, line := range strings.Split(r.T(f.ExploitExample), "\n") {
-					fmt.Fprintf(w, "  %s%s%s\n", colorMagenta, line, colorReset)
+				// Create a stunning code box
+				lines := strings.Split(r.T(f.ExploitExample), "\n")
+				maxL := 0
+				for _, l := range lines {
+					if len(l) > maxL {
+						maxL = len(l)
+					}
 				}
+				if maxL > reportWidth-8 {
+					maxL = reportWidth - 8
+				}
+				
+				fmt.Fprintf(w, "  %s%s  ┌%s┐%s\n", colorMagenta, colorDim, strings.Repeat("─", maxL+2), colorReset)
+				for _, line := range lines {
+					if len(line) > maxL {
+						line = line[:maxL]
+					}
+					padding := strings.Repeat(" ", maxL-len(line))
+					fmt.Fprintf(w, "  %s%s  │ %s%s%s │%s\n", colorMagenta, colorDim, colorReset, line, padding, colorReset)
+				}
+				fmt.Fprintf(w, "  %s%s  └%s┘%s\n", colorMagenta, colorDim, strings.Repeat("─", maxL+2), colorReset)
 			}
 
 			if f.Remediation != "" {
@@ -394,6 +443,19 @@ func (r *Reporter) renderTerminal(report Report) error {
 	return nil
 }
 
+func (r *Reporter) printLogo(w io.Writer) {
+	logo := `
+    ___             _ _ _   _            
+   / _ \           | (_) | | |           
+  / /_\ \_   _  __| |_| |_| |_ ___ _ __  
+  |  _  | | | |/ _` + "`" + ` | | __| __/ _ \ '__| 
+  | | | | |_| | (_| | | |_| ||  __/ |    
+  \_| |_/\__,_|\__,_|_|\__|\__\___|_|    
+`
+	fmt.Fprintf(w, "%s%s%s\n", colorBold, colorMagenta, logo)
+	fmt.Fprintf(w, " %s%s npm Security Audit - Version 1.3.0 %s\n", colorCyan, strings.Repeat("━", 10), colorReset)
+}
+
 func (r *Reporter) renderMarkdown(report Report) error {
 	w := r.writer
 	fmt.Fprintf(w, "# %s\n\n", r.T("title"))
@@ -408,64 +470,106 @@ func (r *Reporter) renderMarkdown(report Report) error {
 	scoreColor, scoreLabel := r.GetRiskLevel(report.Score)
 	_ = scoreColor // Not used in Markdown
 	fmt.Fprintf(w, "\n## %s\n\n", r.T("risk_assessment"))
-	fmt.Fprintf(w, "### %s\n", scoreLabel)
-	fmt.Fprintf(w, "%s\n\n", r.T("score_label", report.Score))
+	fmt.Fprintf(w, "### %s (%d/100)\n\n", scoreLabel, report.Score)
 
 	allFindings := collectFindings(report.Results)
 	if len(allFindings) == 0 {
 		fmt.Fprintf(w, "> %s\n\n", r.T("no_issues"))
 	} else {
 		fmt.Fprintf(w, "## %s\n\n", r.T("findings_summary"))
-		fmt.Fprintf(w, "| %s | %s |\n", r.T("severity_critical"), r.T("severity_high"))
-		fmt.Fprintf(w, "| --- | --- |\n")
-		// ... simpler markdown for now
-		fmt.Fprintf(w, "\n### %s\n\n", r.T("findings_summary"))
+		
 		for _, f := range allFindings {
-			fmt.Fprintf(w, "#### [%s] %s\n", f.Severity, r.T(f.Title))
-			fmt.Fprintf(w, "*%s*\n\n", r.T("analyzer_label", f.Analyzer))
-			fmt.Fprintf(w, "%s\n\n", r.T(f.Description))
+			severityEmoji := "🛡️"
+			switch f.Severity {
+			case analyzer.SeverityCritical:
+				severityEmoji = "🛑"
+			case analyzer.SeverityHigh:
+				severityEmoji = "⚠️"
+			case analyzer.SeverityMedium:
+				severityEmoji = "🔸"
+			case analyzer.SeverityLow:
+				severityEmoji = "🔹"
+			}
+
+			fmt.Fprintf(w, "### %s [%s] %s\n\n", severityEmoji, f.Severity, r.T(f.Title))
+			fmt.Fprintf(w, "- **%s**: %s\n", r.T("analyzer_label", ""), f.Analyzer)
+			fmt.Fprintf(w, "\n%s\n\n", r.T(f.Description))
+			
 			if f.ExploitExample != "" {
-				fmt.Fprintf(w, "**%s**\n\n```\n%s\n```\n\n", r.T("attack_scenario"), r.T(f.ExploitExample))
+				fmt.Fprintf(w, "#### 💣 %s\n\n```javascript\n%s\n```\n\n", r.T("attack_scenario"), r.T(f.ExploitExample))
 			}
+			
 			if f.Remediation != "" {
-				fmt.Fprintf(w, "**%s**\n\n%s\n\n", r.T("remediation"), r.T(f.Remediation))
+				fmt.Fprintf(w, "#### ✅ %s\n\n> %s\n\n", r.T("remediation"), r.T(f.Remediation))
 			}
+			fmt.Fprintf(w, "---\n\n")
 		}
 	}
 
-	fmt.Fprintf(w, "---\n*%s*\n", r.T("audited_at", report.AuditedAt))
+	fmt.Fprintf(w, "*%s*\n", r.T("audited_at", report.AuditedAt))
 	return nil
 }
 
 func (r *Reporter) renderHTML(report Report) error {
 	w := r.writer
-	fmt.Fprintf(w, "<!DOCTYPE html><html><head><title>%s</title>", r.T("title"))
-	fmt.Fprintf(w, "<style>body{font-family:sans-serif;line-height:1.5;max-width:800px;margin:2em auto;padding:0 1em;} .critical{color:red;font-weight:bold;} .high{color:red;} .medium{color:orange;} .low{color:gray;} pre{background:#f4f4f4;padding:1em;overflow-x:auto;}</style></head><body>")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>%s - %s</title>
+<style>
+	body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.6; color: #24292e; max-width: 900px; margin: 0 auto; padding: 2rem; background: #f6f8fa; }
+	.card { background: white; border: 1px solid #e1e4e8; border-radius: 6px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(27,31,35,0.12); }
+	h1, h2, h3 { border-bottom: 1px solid #eaecef; padding-bottom: .3em; }
+	.score-high { color: #d73a49; } .score-med { color: #e36209; } .score-low { color: #28a745; }
+	.finding { border-left: 5px solid #e1e4e8; padding-left: 1rem; margin-bottom: 2rem; }
+	.CRITICAL { border-color: #cb2431; background: #fff5f5; }
+	.HIGH { border-color: #d73a49; background: #fff5f5; }
+	.MEDIUM { border-color: #e36209; background: #fffdef; }
+	.LOW { border-color: #28a745; background: #f0fff4; }
+	pre { background: #2f363d; color: #fafbfc; padding: 1rem; border-radius: 6px; overflow-x: auto; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; }
+	code { font-family: inherit; }
+	.remediation { background: #e1f5fe; padding: 1rem; border-radius: 6px; border-left: 5px solid #03a9f4; }
+	.footer { text-align: center; color: #6a737d; font-size: 0.8rem; margin-top: 4rem; }
+</style>
+</head>
+<body>`, r.T("title"), report.Package)
+
 	fmt.Fprintf(w, "<h1>%s</h1>", r.T("title"))
-	fmt.Fprintf(w, "<h2>%s</h2>", r.T("pkg_info"))
-	fmt.Fprintf(w, "<ul><li><b>%s</b>: %s@%s</li><li><b>%s</b>: %s</li></ul>", r.T("package"), report.Package, report.Version, r.T("license"), report.Info.License)
+	
+	fmt.Fprintf(w, "<div class='card'><h2>%s</h2><ul>", r.T("pkg_info"))
+	fmt.Fprintf(w, "<li><b>%s</b>: %s@%s</li>", r.T("package"), report.Package, report.Version)
+	if report.Info.License != "" {
+		fmt.Fprintf(w, "<li><b>%s</b>: %s</li>", r.T("license"), report.Info.License)
+	}
+	fmt.Fprintf(w, "<li><b>%s</b>: %d</li>", r.T("versions"), report.Info.TotalVersions)
+	fmt.Fprintf(w, "</ul></div>")
 	
 	_, scoreLabel := r.GetRiskLevel(report.Score)
-	fmt.Fprintf(w, "<h2>%s</h2>", r.T("risk_assessment"))
-	fmt.Fprintf(w, "<p><b>%s</b>: %s</p>", scoreLabel, r.T("score_label", report.Score))
+	fmt.Fprintf(w, "<div class='card'><h2>%s</h2><h3 class='score-high'>%s (%d/100)</h3></div>", r.T("risk_assessment"), scoreLabel, report.Score)
 
 	allFindings := collectFindings(report.Results)
 	if len(allFindings) > 0 {
 		fmt.Fprintf(w, "<h2>%s</h2>", r.T("findings_summary"))
 		for _, f := range allFindings {
-			fmt.Fprintf(w, "<div class='%s'><h3>[%s] %s</h3>", strings.ToLower(f.Severity.String()), f.Severity, r.T(f.Title))
-			fmt.Fprintf(w, "<p><i>%s</i></p>", r.T("analyzer_label", f.Analyzer))
+			fmt.Fprintf(w, "<div class='card finding %s'>", f.Severity)
+			fmt.Fprintf(w, "<h3>[%s] %s</h3>", f.Severity, r.T(f.Title))
+			fmt.Fprintf(w, "<p><i>%s: %s</i></p>", r.T("analyzer_label", ""), f.Analyzer)
 			fmt.Fprintf(w, "<p>%s</p>", r.T(f.Description))
+			
 			if f.ExploitExample != "" {
-				fmt.Fprintf(w, "<h4>%s</h4><pre>%s</pre>", r.T("attack_scenario"), r.T(f.ExploitExample))
+				fmt.Fprintf(w, "<h4>💣 %s</h4><pre><code>%s</code></pre>", r.T("attack_scenario"), r.T(f.ExploitExample))
 			}
 			if f.Remediation != "" {
-				fmt.Fprintf(w, "<h4>%s</h4><p>%s</p>", r.T("remediation"), r.T(f.Remediation))
+				fmt.Fprintf(w, "<div class='remediation'><h4>✅ %s</h4><p>%s</p></div>", r.T("remediation"), r.T(f.Remediation))
 			}
 			fmt.Fprintf(w, "</div>")
 		}
+	} else {
+		fmt.Fprintf(w, "<div class='card'><p>%s</p></div>", r.T("no_issues"))
 	}
-	fmt.Fprintf(w, "<hr><p><i>%s</i></p></body></html>", r.T("audited_at", report.AuditedAt))
+	
+	fmt.Fprintf(w, "<div class='footer'>%s</div></body></html>", r.T("audited_at", report.AuditedAt))
 	return nil
 }
 

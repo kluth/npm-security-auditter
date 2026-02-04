@@ -49,7 +49,7 @@ func main() {
   auditter express --json --output report.json
   auditter --project package.json --severity high
   auditter --node-modules --format html --output audit.html`,
-		Version: "1.3.0",
+		Version: "1.4.0",
 		RunE:    run,
 	}
 
@@ -150,6 +150,7 @@ func run(cmd *cobra.Command, args []string) error {
 		analyzer.NewTarballAnalyzer(),
 		analyzer.NewRepoVerifierAnalyzer(),
 		analyzer.NewIssuesAnalyzer(),
+		analyzer.NewShellScriptAnalyzer(),
 	}
 	if !noSandbox {
 		analyzers = append(analyzers, analyzer.NewSandboxAnalyzer())

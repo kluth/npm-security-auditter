@@ -58,8 +58,34 @@ func (a *TarballAnalyzer) Analyze(ctx context.Context, pkg *registry.PackageMeta
 	findings = append(findings, a.findCryptoWallets(ep)...)
 	findings = append(findings, a.checkMalwareSignatures(ep)...)
 	findings = append(findings, a.checkLargeFiles(ep)...)
+	findings = append(findings, a.detectNativeBuilds(ep)...)
+
+	// Minified only check
+	minA := NewMinifiedOnlyAnalyzer()
+	minFindings, _ := minA.AnalyzePackage(ctx, ep)
+	findings = append(findings, minFindings...)
+
+	// Dangerous extensions check
+	extA := NewDangerousExtensionAnalyzer()
+	extFindings, _ := extA.AnalyzePackage(ctx, ep)
+	findings = append(findings, extFindings...)
 
 	return findings, nil
+}
+
+func (a *TarballAnalyzer) detectNativeBuilds(ep *tarball.ExtractedPackage) []Finding {
+	var findings []Finding
+	for _, f := range ep.Files {
+		if filepath.Base(f.Path) == "binding.gyp" {
+			findings = append(findings, Finding{
+				Analyzer:    a.Name(),
+				Title:       "Native build configuration (binding.gyp)",
+				Description: fmt.Sprintf("File %q indicates this package contains native C/C++ components. Native builds have a larger attack surface and can bypass many JS-level security monitors.", f.Path),
+				Severity:    SeverityMedium,
+			})
+		}
+	}
+	return findings
 }
 
 func (a *TarballAnalyzer) checkLargeFiles(ep *tarball.ExtractedPackage) []Finding {
@@ -71,7 +97,7 @@ func (a *TarballAnalyzer) checkLargeFiles(ep *tarball.ExtractedPackage) []Findin
 			if f.IsJS {
 				severity = SeverityMedium
 			}
-			*&findings = append(findings, Finding{
+			findings = append(findings, Finding{
 				Analyzer:    a.Name(),
 				Title:       "Large file detected",
 				Description: fmt.Sprintf("File %q is unusually large (%.2f MB).", f.Path, float64(f.Size)/(1024*1024)),
@@ -89,22 +115,42 @@ func (a *TarballAnalyzer) checkLargeFiles(ep *tarball.ExtractedPackage) []Findin
 
 func (a *TarballAnalyzer) scanJSFiles(ep *tarball.ExtractedPackage) []Finding {
 	var findings []Finding
+	envA := NewEnvAnalyzer()
+	telA := NewTelemetryAnalyzer()
+	sideA := NewSideEffectAnalyzer()
+	netA := NewPrivateNetworkAnalyzer()
+	urlA := NewSuspiciousURLAnalyzer()
+
 	for _, f := range ep.Files {
 		if !f.IsJS {
 			continue
 		}
-		content, err := os.ReadFile(filepath.Join(ep.Dir, f.Path))
+		contentBytes, err := os.ReadFile(filepath.Join(ep.Dir, f.Path))
 		if err != nil {
 			continue
 		}
+		content := string(contentBytes)
+
+		// Env variables
+		findings = append(findings, envA.scanContent(content, f.Path)...)
+		// Telemetry
+		findings = append(findings, telA.scanContent(content, f.Path)...)
+		// Side effects
+		findings = append(findings, sideA.scanContent(content, f.Path)...)
+		// Network
+		findings = append(findings, netA.scanContent(content, f.Path)...)
+		// URLs
+		findings = append(findings, urlA.scanContent(content, f.Path)...)
 
 		for _, pat := range maliciousJSPatterns {
-			if pat.Pattern.Match(content) {
+			if pat.Pattern.Match(contentBytes) {
 				findings = append(findings, Finding{
-					Analyzer:    "tarball-analysis",
-					Title:       fmt.Sprintf("Suspicious pattern: %s", pat.Name),
-					Description: fmt.Sprintf("File %q contains a suspicious pattern (%s) that may indicate malicious behavior.", f.Path, pat.Name),
-					Severity:    pat.Severity,
+					Analyzer:       "tarball-analysis",
+					Title:          fmt.Sprintf("Suspicious pattern: %s", pat.Name),
+					Description:    fmt.Sprintf("File %q contains a suspicious pattern (%s) that may indicate malicious behavior.", f.Path, pat.Name),
+					Severity:       pat.Severity,
+					ExploitExample: pat.ExploitExample,
+					Remediation:    pat.Remediation,
 				})
 			}
 		}
@@ -200,18 +246,7 @@ func (a *TarballAnalyzer) findHiddenFiles(ep *tarball.ExtractedPackage) []Findin
 func (a *TarballAnalyzer) detectBinaries(ep *tarball.ExtractedPackage) []Finding {
 	var findings []Finding
 	for _, f := range ep.Files {
-		ext := strings.ToLower(filepath.Ext(f.Path))
-		if ext == ".exe" || ext == ".dll" || ext == ".so" || ext == ".dylib" {
-			findings = append(findings, Finding{
-				Analyzer:    "tarball-analysis",
-				Title:       "Compiled binary in package",
-				Description: fmt.Sprintf("File %q is a compiled binary (%s). Binaries in npm packages are unusual and may be malicious.", f.Path, ext),
-				Severity:    SeverityHigh,
-			})
-			continue
-		}
-
-		// Check magic bytes.
+		// Magic bytes check only (extensions handled by DangerousExtensionAnalyzer)
 		content, err := readFileHead(filepath.Join(ep.Dir, f.Path), 8)
 		if err != nil || len(content) < 2 {
 			continue

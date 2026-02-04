@@ -155,6 +155,7 @@ func (a *RepoVerifierAnalyzer) verifyGitHub(ctx context.Context, owner, repo str
 			Title:       "Repository not found",
 			Description: fmt.Sprintf("GitHub repository %s/%s does not exist (404). The source code is unavailable.", owner, repo),
 			Severity:    SeverityCritical,
+			Remediation: "Do not trust packages that point to non-existent repositories. This is a common tactic for malicious packages to appear legitimate while hiding their true source.",
 		})
 		return findings
 
@@ -164,6 +165,7 @@ func (a *RepoVerifierAnalyzer) verifyGitHub(ctx context.Context, owner, repo str
 			Title:       "GitHub API rate limited",
 			Description: "GitHub API rate limit reached. Repository verification was skipped.",
 			Severity:    SeverityLow,
+			Remediation: "Retry the audit later or provide a GitHub token to increase rate limits.",
 		})
 		return findings
 	}
@@ -189,6 +191,7 @@ func (a *RepoVerifierAnalyzer) verifyGitHub(ctx context.Context, owner, repo str
 			Title:       "Repository is archived",
 			Description: fmt.Sprintf("GitHub repository %s/%s is archived. The package may be unmaintained.", owner, repo),
 			Severity:    SeverityMedium,
+			Remediation: "Archived repositories are read-only. Look for a fork or a more actively maintained alternative.",
 		})
 	}
 
@@ -199,6 +202,7 @@ func (a *RepoVerifierAnalyzer) verifyGitHub(ctx context.Context, owner, repo str
 			Title:       "Repository is disabled",
 			Description: fmt.Sprintf("GitHub repository %s/%s is disabled by GitHub, possibly due to policy violations.", owner, repo),
 			Severity:    SeverityHigh,
+			Remediation: "GitHub disables repositories for TOS violations, which include hosting malware. Avoid this package.",
 		})
 	}
 
@@ -209,6 +213,7 @@ func (a *RepoVerifierAnalyzer) verifyGitHub(ctx context.Context, owner, repo str
 			Title:       "Repository appears abandoned",
 			Description: fmt.Sprintf("Last push to %s/%s was %s. The package may be unmaintained.", owner, repo, ghRepo.PushedAt.Format("2006-01-02")),
 			Severity:    SeverityLow,
+			Remediation: "Abandoned packages are at higher risk of being hijacked if the maintainer's account is compromised.",
 		})
 	}
 
@@ -221,6 +226,7 @@ func (a *RepoVerifierAnalyzer) verifyGitHub(ctx context.Context, owner, repo str
 				Title:       "Description mismatch between npm and GitHub",
 				Description: fmt.Sprintf("npm description and GitHub repo description have low similarity (%.2f). This may indicate the package points to a wrong or hijacked repository.", similarity),
 				Severity:    SeverityMedium,
+				Remediation: "Verify that the repository linked in package.json is actually the source for this package. Attackers often link to popular repositories to fake legitimacy.",
 			})
 		}
 	}
@@ -267,6 +273,7 @@ func (a *RepoVerifierAnalyzer) compareReadme(ctx context.Context, owner, repo, n
 			Title:       "README mismatch between npm and GitHub",
 			Description: fmt.Sprintf("npm README and GitHub README have low similarity (%.2f). The package may have been compromised or the repo link is incorrect.", similarity),
 			Severity:    SeverityMedium,
+			Remediation: "Manually compare the documentation on npm with the one in the repository. Discrepancies often hide malicious instructions or features.",
 		}}
 	}
 
@@ -290,6 +297,7 @@ func (a *RepoVerifierAnalyzer) checkHomepage(ctx context.Context, homepage strin
 			Title:       "Homepage unreachable",
 			Description: fmt.Sprintf("Homepage %s could not be reached: %s", homepage, err.Error()),
 			Severity:    SeverityLow,
+			Remediation: "Verify the homepage URL manually. Malicious packages sometimes use dead or unrelated domains to appear professional.",
 		}}
 	}
 	defer resp.Body.Close()
@@ -300,6 +308,7 @@ func (a *RepoVerifierAnalyzer) checkHomepage(ctx context.Context, homepage strin
 			Title:       "Homepage returns 404",
 			Description: fmt.Sprintf("Homepage %s returns HTTP 404. The project page may have been removed.", homepage),
 			Severity:    SeverityMedium,
+			Remediation: "A broken homepage link is a risk signal for abandoned or unmaintained projects.",
 		}}
 	}
 

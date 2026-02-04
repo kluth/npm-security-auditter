@@ -261,7 +261,7 @@ func TestTarballAnalyzer_Obfuscation_And_Entropy(t *testing.T) {
 		"Extremely long lines (likely minified/obfuscated)",
 		"High non-alphanumeric ratio",
 		"Long base64-encoded string",
-		"Compiled binary in package",
+		"Dangerous file extension detected",
 		"Highly complex or randomized content",
 		"Extremely complex or randomized content",
 	}
