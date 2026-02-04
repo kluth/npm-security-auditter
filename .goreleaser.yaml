@@ -16,7 +16,7 @@ builds:
     goarch:
       - amd64
       - arm64
-    main: ./cmd/auditter/main.go
+    main: ./cmd/auditter
     binary: auditter
 
 archives:
