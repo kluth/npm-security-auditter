@@ -1,4 +1,4 @@
-auditter
+/auditter
 *.exe
 node_modules/
 *.out
