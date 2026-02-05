@@ -277,6 +277,7 @@ func (m model) runAudit() tea.Msg {
 		analyzer.NewRepoVerifierAnalyzer(),
 		analyzer.NewIssuesAnalyzer(),
 		analyzer.NewShellScriptAnalyzer(),
+		analyzer.NewScorecardAnalyzer(),
 	}
 	if !noSandbox {
 		analyzers = append(analyzers, analyzer.NewSandboxAnalyzer())

@@ -70,6 +70,11 @@ func (a *TarballAnalyzer) Analyze(ctx context.Context, pkg *registry.PackageMeta
 	extFindings, _ := extA.AnalyzePackage(ctx, ep)
 	findings = append(findings, extFindings...)
 
+	// Lockfile integrity check
+	lockA := NewLockfileAnalyzer()
+	lockFindings, _ := lockA.AnalyzePackage(ctx, ep)
+	findings = append(findings, lockFindings...)
+
 	return findings, nil
 }
 
