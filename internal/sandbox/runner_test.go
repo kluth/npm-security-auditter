@@ -1,10 +1,13 @@
 package sandbox
 
 import (
+	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -101,11 +104,43 @@ func TestIsolationAvailable(t *testing.T) {
 	if runtime.GOOS == "linux" {
 		if !r.UnshareAvailable() {
 			t.Log("unshare not available on this system")
+		} else {
+			// Verify UID mapping (should be root inside)
+			ctx := context.Background()
+			cmd := exec.CommandContext(ctx, "id", "-u")
+			applyPlatformIsolation(cmd)
+			var out bytes.Buffer
+			cmd.Stdout = &out
+			if err := cmd.Run(); err == nil {
+				uid := strings.TrimSpace(out.String())
+				if uid != "0" {
+					t.Errorf("Expected UID 0 inside namespace, got %s", uid)
+				}
+			} else {
+				t.Logf("Namespace isolation test skipped: %v (likely lacks kernel support/permissions)", err)
+			}
 		}
 	}
-	if runtime.GOOS == "windows" {
-		// We want to ensure Windows Job Object isolation is available/used
-		t.Log("Testing Windows isolation")
+}
+
+func TestNetworkIsolation(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Network isolation test only for Linux")
+	}
+	r := NewRunner()
+	if !r.UnshareAvailable() {
+		t.Skip("Namespaces not supported")
+	}
+
+	// Try to reach a public IP
+	ctx := context.Background()
+	// 8.8.8.8 is Google DNS, should be unreachable if network namespace is active
+	cmd := exec.CommandContext(ctx, "ping", "-c", "1", "-W", "1", "8.8.8.8")
+	applyPlatformIsolation(cmd)
+	
+	err := cmd.Run()
+	if err == nil {
+		t.Error("Network was reachable inside isolated sandbox! Network isolation failed.")
 	}
 }
 
