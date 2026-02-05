@@ -49,7 +49,7 @@ func main() {
   auditter express --json --output report.json
   auditter --project package.json --severity high
   auditter --node-modules --format html --output audit.html`,
-		Version: "1.4.0",
+		Version: "1.5.0",
 		RunE:    run,
 	}
 

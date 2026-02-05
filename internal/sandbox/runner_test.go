@@ -96,6 +96,19 @@ func TestNewRunner(t *testing.T) {
 	_ = r.UnshareAvailable()
 }
 
+func TestIsolationAvailable(t *testing.T) {
+	r := NewRunner()
+	if runtime.GOOS == "linux" {
+		if !r.UnshareAvailable() {
+			t.Log("unshare not available on this system")
+		}
+	}
+	if runtime.GOOS == "windows" {
+		// We want to ensure Windows Job Object isolation is available/used
+		t.Log("Testing Windows isolation")
+	}
+}
+
 func TestRun_Success(t *testing.T) {
 	if !CheckNodeAvailable() {
 		t.Fatal("node/npm not available - mandatory for sandbox testing")

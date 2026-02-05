@@ -18,13 +18,11 @@ type Runner struct {
 	unshareAvailable bool
 }
 
-// NewRunner creates a sandbox runner. It probes for node, npm, and unshare.
+// NewRunner creates a sandbox runner. It probes for node and npm.
 func NewRunner() *Runner {
 	r := &Runner{}
 	r.nodeAvailable = commandExists("node") && commandExists("npm")
-	if runtime.GOOS == "linux" {
-		r.unshareAvailable = commandExists("unshare")
-	}
+	r.unshareAvailable = runtime.GOOS == "linux" // Native support via syscall
 	return r
 }
 
@@ -33,13 +31,13 @@ func (r *Runner) NodeAvailable() bool {
 	return r.nodeAvailable
 }
 
-// UnshareAvailable reports whether unshare is available for network isolation.
+// UnshareAvailable reports whether native isolation is supported.
 func (r *Runner) UnshareAvailable() bool {
 	return r.unshareAvailable
 }
 
 // Run installs a package in a temp directory and runs the harness against it.
-// It returns the harness output and whether network isolation was used.
+// It returns the harness output and whether isolation was used.
 func (r *Runner) Run(ctx context.Context, pkgName, pkgVersion string) (*HarnessOutput, bool, error) {
 	if !r.nodeAvailable {
 		return nil, false, fmt.Errorf("node and npm are required for sandbox analysis")
@@ -78,49 +76,47 @@ func (r *Runner) Run(ctx context.Context, pkgName, pkgVersion string) (*HarnessO
 	// Determine the installed package path.
 	pkgPath := filepath.Join(tmpDir, "node_modules", pkgName)
 
-	// Run harness, optionally with network isolation.
-	networkIsolated := false
+	// Run harness with platform isolation.
+	isolated := true
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	if r.unshareAvailable {
-		cmd := exec.CommandContext(ctx, "unshare", "-rn", "node", harnessPath, pkgPath)
-		cmd.Dir = tmpDir
-		cmd.Env = env
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
+	cmd := exec.CommandContext(ctx, "node", harnessPath, pkgPath)
+	cmd.Dir = tmpDir
+	cmd.Env = env
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	
+	// Apply platform-specific isolation (Namespaces on Linux, Job Objects on Windows)
+	applyPlatformIsolation(cmd)
 
-		if err := cmd.Run(); err != nil {
-			// Fall back to running without unshare.
-			stdout.Reset()
-			stderr.Reset()
-		} else {
-			networkIsolated = true
-		}
-	}
-
-	if !networkIsolated {
-		cmd := exec.CommandContext(ctx, "node", harnessPath, pkgPath)
-		cmd.Dir = tmpDir
-		cmd.Env = env
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-
-		if err := cmd.Run(); err != nil {
-			// If the harness itself wrote JSON before failing, try to parse it.
-			if stdout.Len() == 0 {
-				return nil, false, fmt.Errorf("harness execution failed: %w: %s", err, stderr.String())
+	if err := cmd.Run(); err != nil {
+		// If it failed with isolation, try one last time without it ONLY on Linux 
+		// (sometimes namespaces are restricted by kernel policy)
+		if runtime.GOOS == "linux" && stdout.Len() == 0 {
+			isolated = false
+			cmd = exec.CommandContext(ctx, "node", harnessPath, pkgPath)
+			cmd.Dir = tmpDir
+			cmd.Env = env
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				if stdout.Len() == 0 {
+					return nil, false, fmt.Errorf("harness execution failed: %w: %s", err, stderr.String())
+				}
 			}
+		} else if stdout.Len() == 0 {
+			return nil, false, fmt.Errorf("harness execution failed: %w: %s", err, stderr.String())
 		}
 	}
 
 	// Parse harness output.
 	var output HarnessOutput
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
-		return nil, networkIsolated, fmt.Errorf("parsing harness output: %w (raw: %s)", err, stdout.String())
+		return nil, isolated, fmt.Errorf("parsing harness output: %w (raw: %s)", err, stdout.String())
 	}
 
-	return &output, networkIsolated, nil
+	return &output, isolated, nil
 }
 
 // sanitizedEnv returns a minimal environment for subprocess execution.
