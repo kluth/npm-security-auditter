@@ -9,11 +9,96 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/kluth/npm-security-auditter/internal/registry"
 	"github.com/kluth/npm-security-auditter/internal/tarball"
 )
+
+// Patterns that indicate a file is in a minified/distribution directory.
+var minifiedPathPatterns = []string{
+	"/dist/",
+	"/build/",
+	"/bundle/",
+	"/lib/",
+	"/umd/",
+	"/esm/",
+	"/cjs/",
+	"/fesm",  // Angular flat ESM
+	".min.",
+	".bundle.",
+	".prod.",
+	"-min.",
+	"-bundle.",
+}
+
+// sourceMappingURLPattern detects source map references in minified files.
+var sourceMappingURLPattern = regexp.MustCompile(`//[#@]\s*sourceMappingURL=`)
+
+// isLikelyMinifiedPath checks if the file path suggests minified/bundled content.
+func isLikelyMinifiedPath(path string) bool {
+	pathLower := strings.ToLower(path)
+	for _, pattern := range minifiedPathPatterns {
+		if strings.Contains(pathLower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// isLikelyMinifiedContent checks content characteristics that suggest minification.
+func isLikelyMinifiedContent(content []byte) bool {
+	if len(content) < 500 {
+		return false
+	}
+
+	// Check for source mapping URL (strong indicator of minified code)
+	if sourceMappingURLPattern.Match(content) {
+		return true
+	}
+
+	// Check average line length
+	lines := bytes.Split(content, []byte("\n"))
+	if len(lines) == 0 {
+		return false
+	}
+
+	totalLen := 0
+	for _, line := range lines {
+		totalLen += len(line)
+	}
+	avgLineLen := totalLen / len(lines)
+
+	// Very long average line length suggests minification
+	if avgLineLen > 500 {
+		return true
+	}
+
+	// Check for common minifier patterns
+	minifierPatterns := [][]byte{
+		[]byte("!function("),
+		[]byte("(function("),
+		[]byte("Object.defineProperty("),
+		[]byte("__webpack_require__"),
+		[]byte("__esModule"),
+	}
+
+	for _, pattern := range minifierPatterns {
+		if bytes.Contains(content[:minInt(1000, len(content))], pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
 
 // TarballAnalyzer performs deep content analysis of extracted package tarballs.
 type TarballAnalyzer struct{}
@@ -174,6 +259,8 @@ func (a *TarballAnalyzer) detectObfuscation(ep *tarball.ExtractedPackage) []Find
 			continue
 		}
 
+		isMinified := isLikelyMinifiedPath(f.Path) || isLikelyMinifiedContent(content)
+
 		lines := bytes.Split(content, []byte("\n"))
 		if len(lines) == 0 {
 			continue
@@ -185,13 +272,32 @@ func (a *TarballAnalyzer) detectObfuscation(ep *tarball.ExtractedPackage) []Find
 			totalLen += len(line)
 		}
 		avgLineLen := totalLen / len(lines)
-		if avgLineLen > 5000 {
+
+		// For minified files, only flag extremely long lines (likely packed/obfuscated)
+		lineThreshold := 5000
+		if isMinified {
+			lineThreshold = 50000 // Much higher threshold for known minified files
+		}
+
+		if avgLineLen > lineThreshold {
+			severity := SeverityMedium
+			desc := fmt.Sprintf("File %q has an average line length of %d characters, which suggests obfuscation or suspicious minification.", f.Path, avgLineLen)
+			if isMinified {
+				severity = SeverityLow
+				desc += " This is a distribution file, so long lines are expected from minification."
+			}
 			findings = append(findings, Finding{
 				Analyzer:    "tarball-analysis",
 				Title:       "Extremely long lines (likely minified/obfuscated)",
-				Description: fmt.Sprintf("File %q has an average line length of %d characters, which suggests obfuscation or suspicious minification.", f.Path, avgLineLen),
-				Severity:    SeverityMedium,
+				Description: desc,
+				Severity:    severity,
 			})
+		}
+
+		// Skip non-alphanumeric ratio check entirely for minified files.
+		// Minified code naturally has high punctuation density.
+		if isMinified {
+			continue
 		}
 
 		// Check non-alphanumeric ratio.
@@ -272,6 +378,36 @@ func (a *TarballAnalyzer) detectBinaries(ep *tarball.ExtractedPackage) []Finding
 	return findings
 }
 
+// isLikelyDataFile checks if a file appears to contain legitimate data (Unicode tables, etc.)
+func isLikelyDataFile(path string, content []byte) bool {
+	pathLower := strings.ToLower(path)
+
+	// Files with these patterns are often data files, not code
+	dataPatterns := []string{
+		"unicode", "char", "word", "emoji", "symbol",
+		"locale", "i18n", "l10n", "lang", "language",
+		"encoding", "codec", "charset",
+		"data", "table", "map", "dict",
+	}
+	for _, pattern := range dataPatterns {
+		if strings.Contains(pathLower, pattern) {
+			return true
+		}
+	}
+
+	// Check for array/object literals with many Unicode escapes (data files)
+	if bytes.Count(content, []byte("\\u")) > 50 {
+		return true
+	}
+
+	// Check for large array literals (common in data files)
+	if bytes.Count(content, []byte(",")) > 100 && bytes.Count(content, []byte("[")) > 0 {
+		return true
+	}
+
+	return false
+}
+
 func (a *TarballAnalyzer) findEncodedPayloads(ep *tarball.ExtractedPackage) []Finding {
 	var findings []Finding
 	// Only scan JS/TS files for encoded payloads.
@@ -286,18 +422,38 @@ func (a *TarballAnalyzer) findEncodedPayloads(ep *tarball.ExtractedPackage) []Fi
 			continue
 		}
 
+		isMinified := isLikelyMinifiedPath(f.Path) || isLikelyMinifiedContent(content)
+		isDataFile := isLikelyDataFile(f.Path, content)
+
+		// Skip entropy checks entirely for data files - they naturally have high entropy
+		if isDataFile {
+			continue
+		}
+
 		// Look for long base64 strings.
+		// Use higher threshold for minified files since they often contain encoded assets.
+		b64Threshold := 100
+		if isMinified {
+			b64Threshold = 500 // Much higher for dist files
+		}
+
 		inB64 := 0
 		for _, b := range content {
 			if strings.ContainsRune(b64Chars, rune(b)) {
 				inB64++
 			} else {
-				if inB64 > 100 {
+				if inB64 > b64Threshold {
+					severity := SeverityMedium
+					desc := fmt.Sprintf("File %q contains a base64-like string of %d characters, which may be an encoded payload.", f.Path, inB64)
+					if isMinified {
+						severity = SeverityLow
+						desc += " This appears to be a minified distribution file where base64-encoded assets (fonts, images) are common."
+					}
 					findings = append(findings, Finding{
 						Analyzer:    "tarball-analysis",
 						Title:       "Long base64-encoded string",
-						Description: fmt.Sprintf("File %q contains a base64-like string of %d characters, which may be an encoded payload.", f.Path, inB64),
-						Severity:    SeverityMedium,
+						Description: desc,
+						Severity:    severity,
 					})
 					break // one finding per file is enough
 				}
@@ -306,14 +462,25 @@ func (a *TarballAnalyzer) findEncodedPayloads(ep *tarball.ExtractedPackage) []Fi
 		}
 
 		// Compute Shannon entropy on chunks.
+		// Use much higher threshold for minified files since they naturally have high entropy.
 		if len(content) > 256 {
 			entropy := shannonEntropy(content)
-			if entropy > 4.5 {
+			entropyThreshold := 5.5 // High threshold - normal code rarely exceeds this
+			if isMinified {
+				entropyThreshold = 6.5 // Much higher for dist files
+			}
+
+			if entropy > entropyThreshold {
+				severity := SeverityLow
+				desc := fmt.Sprintf("File %q contains highly randomized data (complexity score: %.2f), which often indicates encoded, encrypted, or obfuscated payloads.", f.Path, entropy)
+				if isMinified {
+					desc += " This appears to be a minified distribution file. High entropy is expected and usually not a security concern."
+				}
 				findings = append(findings, Finding{
 					Analyzer:    "tarball-analysis",
-					Title:       "Highly complex or randomized content",
-					Description: fmt.Sprintf("File %q contains highly randomized data (complexity score: %.2f), which often indicates encoded, encrypted, or obfuscated payloads.", f.Path, entropy),
-					Severity:    SeverityLow,
+					Title:       "High entropy content",
+					Description: desc,
+					Severity:    severity,
 				})
 			}
 		}
@@ -390,11 +557,19 @@ func (a *TarballAnalyzer) entropyAnalysis(ep *tarball.ExtractedPackage) []Findin
 			continue
 		}
 
+		isMinified := isLikelyMinifiedPath(f.Path) || isLikelyMinifiedContent(content)
+
+		// Skip HIGH severity entropy findings for minified files entirely.
+		// They naturally have high entropy due to variable name mangling, etc.
+		if isMinified {
+			continue
+		}
+
 		entropy := shannonEntropy(content)
 		if entropy > 5.5 {
 			findings = append(findings, Finding{
 				Analyzer:    "tarball-analysis",
-				Title:       "Extremely complex or randomized content",
+				Title:       "Extremely high entropy content",
 				Description: fmt.Sprintf("File %q contains extremely randomized data (complexity score: %.2f), which is a strong indicator of obfuscated or encrypted malicious code.", f.Path, entropy),
 				Severity:    SeverityHigh,
 			})

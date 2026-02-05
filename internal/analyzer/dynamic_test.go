@@ -53,7 +53,7 @@ try { dns.lookup('example.com', ()=>{}); } catch(e){}
 const fs = require('fs');
 try { fs.readFileSync('/etc/passwd'); } catch(e){}
 
-try { const x = process.env.AWS_ACCESS_KEY; } catch(e){}
+try { const x = process.env.AWS_SECRET_ACCESS_KEY; const y = process.env.NPM_TOKEN; } catch(e){}
 `
 	if err := os.WriteFile(filepath.Join(tmpDir, "package.json"), []byte(pkgJSON), 0644); err != nil {
 		t.Fatal(err)
@@ -73,13 +73,13 @@ try { const x = process.env.AWS_ACCESS_KEY; } catch(e){}
 		t.Fatalf("Analyze failed: %v", err)
 	}
 
-	// 3. Verify Findings
+	// 3. Verify Findings - use the new i18n keys
 	expectedTitles := map[string]bool{
-		"Process execution attempt":   false,
-		"Network connection attempt":  false,
-		"DNS lookup attempt":          false,
-		"Sensitive file access attempt": false,
-		"Environment variable access": false,
+		"dynamic_process_exec":     false,
+		"dynamic_network_request":  false,
+		"dynamic_dns_lookup":       false,
+		"dynamic_sensitive_file":   false,
+		"dynamic_sensitive_env":    false,
 	}
 
 	for _, f := range findings {

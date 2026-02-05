@@ -252,7 +252,7 @@ func TestRun_WithoutUnshare(t *testing.T) {
 	}
 }
 
-func TestRun_HarnessGarbageOutput(t *testing.T) {
+func TestRun_ProcessExitBlocked(t *testing.T) {
 	if !CheckNodeAvailable() {
 		t.Fatal("node/npm not available - mandatory for sandbox testing")
 	}
@@ -263,18 +263,9 @@ func TestRun_HarnessGarbageOutput(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	pkgJSON := `{"name": "test-pkg-garbage", "version": "1.0.0", "main": "index.js"}`
-	// The harness wraps the execution. We need to make the harness output garbage?
-	// The harness script catches errors.
-	// But if the process crashes hard (e.g. segfault) or we can't make node crash easily.
-	// Wait, Run expects the harness to print JSON at the end.
-	// The harness prints JSON even if exception occurs.
-	// To make parsing fail, the harness must output non-JSON or nothing.
-	// If I put `process.exit(1)` immediately in `index.js`, harness wraps it?
-	// The harness runs `require(pkgPath)`.
-	// If `process.exit` is called, the harness script stops.
-	// So `index.js` doing `process.exit(0)` will prevent harness from printing JSON.
-
+	pkgJSON := `{"name": "test-pkg-exit", "version": "1.0.0", "main": "index.js"}`
+	// The harness now intercepts process.exit() and blocks it from packages.
+	// This test verifies that packages cannot kill the harness process.
 	indexJS := `process.exit(0);`
 	if err := os.WriteFile(filepath.Join(tmpDir, "package.json"), []byte(pkgJSON), 0644); err != nil {
 		t.Fatal(err)
@@ -285,9 +276,24 @@ func TestRun_HarnessGarbageOutput(t *testing.T) {
 
 	r := NewRunner()
 	ctx := context.Background()
-	_, _, err = r.Run(ctx, "test-pkg-garbage", "file:"+tmpDir)
-	if err == nil {
-		t.Error("expected error due to garbage/empty output, got nil")
+	output, _, err := r.Run(ctx, "test-pkg-exit", "file:"+tmpDir)
+	// The harness should now complete successfully even when package tries to exit
+	if err != nil {
+		t.Errorf("harness should complete successfully, got error: %v", err)
+	}
+	if output == nil {
+		t.Fatal("expected output, got nil")
+	}
+	// Verify the process.exit call was intercepted
+	found := false
+	for _, call := range output.Intercepted.ChildProcess {
+		if call.Method == "process.exit" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected process.exit to be intercepted and recorded")
 	}
 }
 

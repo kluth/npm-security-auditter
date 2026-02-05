@@ -163,6 +163,15 @@ var translations = map[Language]map[string]string{
 		"and":                        "and",
 		"more_issues_truncated":      "more issues (see terminal output for full details)",
 		"run_terminal_for_full":      "Run: auditter <package> for full details",
+		// Reputation display
+		"weekly_downloads":           "Weekly Downloads",
+		"trusted_scope":              "Trusted Scope",
+		"yes":                        "Yes",
+		"reputation_adjusted":        "Reputation Adjusted",
+		// Merged findings
+		"merged_summary":             "%d total findings deduplicated to %d unique issues",
+		"detailed_findings_merged_note": "Similar findings merged. Use --verbose to see all individual occurrences.",
+		"verbose_hint":               "Use --verbose flag to see all individual findings.",
 	},
 	LangDE: {
 		"title":              "npm Sicherheits-Audit Bericht",
@@ -295,6 +304,15 @@ var translations = map[Language]map[string]string{
 		"and":                        "und",
 		"more_issues_truncated":      "weitere Probleme (Terminal für vollständige Details)",
 		"run_terminal_for_full":      "Führen Sie aus: auditter <package> für vollständige Details",
+		// Reputation display
+		"weekly_downloads":           "Wöchentliche Downloads",
+		"trusted_scope":              "Vertrauenswürdiger Scope",
+		"yes":                        "Ja",
+		"reputation_adjusted":        "Reputation berücksichtigt",
+		// Merged findings
+		"merged_summary":             "%d Gesamtbefunde auf %d eindeutige Probleme dedupliziert",
+		"detailed_findings_merged_note": "Ähnliche Befunde zusammengeführt. Verwenden Sie --verbose für alle einzelnen Vorkommen.",
+		"verbose_hint":               "Verwenden Sie --verbose um alle einzelnen Befunde zu sehen.",
 	},
 	LangFR: {
 		"title":              "Rapport d'Audit de Sécurité npm",

@@ -92,15 +92,27 @@ func (a *IssuesAnalyzer) checkGitHubIssues(ctx context.Context, owner, repo stri
 		return nil
 	}
 
+	// Keywords that indicate a critical security issue (not just discussion)
+	criticalPatterns := []string{"cve-", "rce", "exploit", "hijack", "breach", "pwn", "compromised", "malware", "backdoor"}
+
 	for _, issue := range issues {
 		lowerTitle := strings.ToLower(issue.Title)
 		for _, kw := range keywords {
 			if strings.Contains(lowerTitle, kw) {
+				// Determine severity based on whether it looks like an active threat
+				severity := SeverityLow // Default: informational
+				for _, critPattern := range criticalPatterns {
+					if strings.Contains(lowerTitle, critPattern) {
+						severity = SeverityHigh
+						break
+					}
+				}
+
 				findings = append(findings, Finding{
 					Analyzer:    a.Name(),
 					Title:       fmt.Sprintf("Security-related issue found: %s", kw),
 					Description: fmt.Sprintf("An open issue mentions %q: %q. See: %s", kw, issue.Title, issue.URL),
-					Severity:    SeverityHigh,
+					Severity:    severity,
 				})
 				break
 			}

@@ -21,13 +21,13 @@ func TestPrivateNetworkAnalyzer(t *testing.T) {
 			"Localhost access",
 			"axios.get('http://localhost:8080/config')",
 			"Private network access detected",
-			SeverityHigh,
+			SeverityLow, // Localhost is LOW - often in configs/tests
 		},
 		{
 			"Private IP range",
 			"const internal = '192.168.1.50';",
 			"Private network access detected",
-			SeverityHigh,
+			SeverityMedium, // Private IPs are MEDIUM - suspicious but not critical
 		},
 		{
 			"Public API access",

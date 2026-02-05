@@ -216,23 +216,27 @@ func TestTarballAnalyzer_Name(t *testing.T) {
 }
 
 func TestTarballAnalyzer_Obfuscation_And_Entropy(t *testing.T) {
-	longLine := strings.Repeat("var a=1;", 1000) // 8000 chars
-	garbage := "!!!!@@@@####$$$$%%%%^^^^&&&&****(((())))____++++====~~~~" + strings.Repeat(";", 100)
+	// Garbage characters that don't look like minified code (many short lines)
+	garbageLines := strings.Repeat("!@#$%^&*()_+\n", 20)
 	base64Str := strings.Repeat("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", 10) // 640 chars
 
-	// High entropy data
-	highEntropy := make([]byte, 1000)
-	for i := range highEntropy {
-		highEntropy[i] = byte((i * 13) % 256) // Pseudo-random distribution
+	// High entropy data that is NOT minified (has many short lines to avoid minification detection)
+	var highEntropyParts []string
+	for i := 0; i < 50; i++ {
+		part := make([]byte, 20)
+		for j := range part {
+			part[j] = byte((i*j*13)%94 + 33) // Printable high entropy
+		}
+		highEntropyParts = append(highEntropyParts, string(part))
 	}
+	highEntropy := strings.Join(highEntropyParts, "\n") // Many short lines = not minified
 
 	files := map[string]string{
 		"package.json":    `{"name":"test","version":"1.0.0"}`,
-		"longlines.js":    longLine,
-		"highratio.js":    garbage,
+		"highratio.js":    garbageLines,
 		"encoded.js":      `var payload = "` + base64Str + `";`,
 		"binary.exe":      "MZ9000", // minimal PE header stub
-		"high_entropy.js": string(highEntropy),
+		"high_entropy.js": highEntropy,
 	}
 	data, shasum := makeTarballData(t, files)
 
@@ -258,12 +262,11 @@ func TestTarballAnalyzer_Obfuscation_And_Entropy(t *testing.T) {
 	}
 
 	expectedTitles := []string{
-		"Extremely long lines (likely minified/obfuscated)",
 		"High non-alphanumeric ratio",
 		"Long base64-encoded string",
 		"Dangerous file extension detected",
-		"Highly complex or randomized content",
-		"Extremely complex or randomized content",
+		"High entropy content",
+		"Extremely high entropy content",
 	}
 
 	foundTitles := make(map[string]bool)

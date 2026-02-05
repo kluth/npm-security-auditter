@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/kluth/npm-security-auditter/internal/registry"
 )
@@ -17,10 +18,12 @@ type netPattern struct {
 var (
 	networkPatterns = []netPattern{
 		{regexp.MustCompile(`169\.254\.169\.254`), SeverityCritical, "Cloud Metadata Service"},
-		{regexp.MustCompile(`localhost|127\.0\.0\.1|::1`), SeverityHigh, "Localhost"},
-		{regexp.MustCompile(`10\.\d{1,3}\.\d{1,3}\.\d{1,3}`), SeverityHigh, "Private Network (10.x.x.x)"},
-		{regexp.MustCompile(`192\.168\.\d{1,3}\.\d{1,3}`), SeverityHigh, "Private Network (192.168.x.x)"},
-		{regexp.MustCompile(`172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}`), SeverityHigh, "Private Network (172.16.x.x)"},
+		// Localhost is LOW severity as it's often in configs, tests, or documentation
+		{regexp.MustCompile(`localhost|127\.0\.0\.1|::1`), SeverityLow, "Localhost"},
+		// Private network ranges are MEDIUM - suspicious but not critical
+		{regexp.MustCompile(`10\.\d{1,3}\.\d{1,3}\.\d{1,3}`), SeverityMedium, "Private Network (10.x.x.x)"},
+		{regexp.MustCompile(`192\.168\.\d{1,3}\.\d{1,3}`), SeverityMedium, "Private Network (192.168.x.x)"},
+		{regexp.MustCompile(`172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}`), SeverityMedium, "Private Network (172.16.x.x)"},
 	}
 )
 
@@ -40,6 +43,11 @@ func (a *PrivateNetworkAnalyzer) Analyze(ctx context.Context, pkg *registry.Pack
 
 func (a *PrivateNetworkAnalyzer) scanContent(content, filename string) []Finding {
 	var findings []Finding
+
+	// Skip type definition files - they can't make network requests
+	if strings.HasSuffix(filename, ".d.ts") {
+		return findings
+	}
 
 	for _, p := range networkPatterns {
 		if p.pattern.MatchString(content) {

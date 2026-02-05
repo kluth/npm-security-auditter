@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -10,9 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kluth/npm-security-auditter/internal/ai"
 	"github.com/kluth/npm-security-auditter/internal/analyzer"
 	"github.com/kluth/npm-security-auditter/internal/registry"
 	"github.com/kluth/npm-security-auditter/internal/reporter"
+	"github.com/kluth/npm-security-auditter/internal/reputation"
 	"github.com/kluth/npm-security-auditter/internal/project"
 	"github.com/spf13/cobra"
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,6 +35,7 @@ var (
 	concurrency      int
 	noSandbox        bool
 	verbose          bool
+	aiSummary        bool
 )
 
 func main() {
@@ -49,7 +53,7 @@ func main() {
   auditter express --json --output report.json
   auditter --project package.json --severity high
   auditter --node-modules --format html --output audit.html`,
-		Version: "1.6.0",
+		Version: "1.8.0",
 		RunE:    run,
 	}
 
@@ -65,7 +69,8 @@ func main() {
 	rootCmd.Flags().IntVar(&timeout, "timeout", 180, "timeout in seconds for each package audit")
 	rootCmd.Flags().IntVarP(&concurrency, "concurrency", "c", 5, "max number of concurrent package audits")
 	rootCmd.Flags().BoolVar(&noSandbox, "no-sandbox", false, "disable dynamic analysis in sandbox")
-	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose logging")
+	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output (show all individual findings)")
+	rootCmd.Flags().BoolVar(&aiSummary, "ai-summary", false, "generate AI analysis via Gemini CLI")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -130,7 +135,7 @@ func run(cmd *cobra.Command, args []string) error {
 		out = f
 	}
 
-	rep := reporter.New(out, format, reporter.Language(lang))
+	rep := reporter.NewWithOptions(out, format, reporter.Language(lang), verbose)
 	var projectReport reporter.ProjectReport
 	projectReport.ProjectName = projectPath
 	if auditNodeModules {
@@ -254,6 +259,17 @@ func run(cmd *cobra.Command, args []string) error {
 				info.CreatedAt = created.Format("2006-01-02")
 			}
 
+			// Fetch download stats and build reputation info
+			downloads, dlErr := client.GetDownloads(ctx, d.Name)
+			if dlErr == nil && downloads != nil {
+				repInfo := reputation.Build(d.Name, downloads.Downloads)
+				info.WeeklyDownloads = repInfo.WeeklyDownloads
+				info.DownloadTier = string(repInfo.DownloadTier)
+				info.IsTrustedScope = repInfo.IsTrustedScope
+				info.TrustedScopeOrg = repInfo.TrustedScopeOrg
+				info.ReputationScore = repInfo.ReputationScore
+			}
+
 			mu.Lock()
 			projectReport.Reports = append(projectReport.Reports, reporter.Report{
 				Package: d.Name,
@@ -270,10 +286,40 @@ func run(cmd *cobra.Command, args []string) error {
 		return projectReport.Reports[i].Package < projectReport.Reports[j].Package
 	})
 
+	var renderErr error
 	if len(deps) > 1 || projectPath != "" || auditNodeModules {
-		return rep.RenderProject(projectReport)
+		renderErr = rep.RenderProject(projectReport)
 	} else if len(projectReport.Reports) > 0 {
-		return rep.Render(projectReport.Reports[0])
+		renderErr = rep.Render(projectReport.Reports[0])
+	}
+
+	if renderErr != nil {
+		return renderErr
+	}
+
+	// Generate AI summary if requested
+	if aiSummary && len(projectReport.Reports) > 0 {
+		// Generate JSON for AI analysis
+		var jsonBuf strings.Builder
+		jsonEnc := json.NewEncoder(&jsonBuf)
+		jsonEnc.SetIndent("", "  ")
+		if len(deps) > 1 || projectPath != "" || auditNodeModules {
+			jsonEnc.Encode(projectReport)
+		} else {
+			jsonEnc.Encode(projectReport.Reports[0])
+		}
+
+		summary, err := ai.GenerateSummary([]byte(jsonBuf.String()))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "\n%sAI Summary unavailable: %s%s\n", "\033[33m", err, "\033[0m")
+		} else {
+			fmt.Fprintf(out, "\n%s╔══════════════════════════════════════════════════════════════════════╗%s\n", "\033[1;36m", "\033[0m")
+			fmt.Fprintf(out, "%s║  AI Analysis (Gemini)                                                ║%s\n", "\033[1;36m", "\033[0m")
+			fmt.Fprintf(out, "%s╚══════════════════════════════════════════════════════════════════════╝%s\n", "\033[1;36m", "\033[0m")
+			fmt.Fprintln(out)
+			fmt.Fprintln(out, summary)
+			fmt.Fprintln(out)
+		}
 	}
 
 	return nil
