@@ -34,7 +34,7 @@ archives:
       - CONTRIBUTING.md
       - SECURITY.md
 
-# Linux packages (DEB, RPM, APK)
+# Linux packages (DEB, RPM, APK, Arch)
 nfpms:
   - id: packages
     package_name: auditter
@@ -62,85 +62,13 @@ nfpms:
       lintian_overrides:
         - statically-linked-binary
 
-# Homebrew tap for macOS/Linux
-brews:
-  - name: auditter
-    repository:
-      owner: kluth
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
-    homepage: https://github.com/kluth/npm-security-auditter
-    description: Security auditing tool for npm packages
-    license: MIT
-    install: |
-      bin.install "auditter"
-    test: |
-      system "#{bin}/auditter", "--version"
-
-# Windows Scoop manifest
-scoops:
-  - name: auditter
-    repository:
-      owner: kluth
-      name: scoop-bucket
-      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
-    homepage: https://github.com/kluth/npm-security-auditter
-    description: Security auditing tool for npm packages
-    license: MIT
-
-# Windows Chocolatey package
-chocolateys:
-  - name: auditter
-    owners: kluth
-    title: NPM Security Auditter
-    authors: Matthias Kluth
-    project_url: https://github.com/kluth/npm-security-auditter
-    license_url: https://github.com/kluth/npm-security-auditter/blob/main/LICENSE
-    require_license_acceptance: false
-    project_source_url: https://github.com/kluth/npm-security-auditter
-    docs_url: https://github.com/kluth/npm-security-auditter#readme
-    bug_tracker_url: https://github.com/kluth/npm-security-auditter/issues
-    tags: "npm security audit packages cli"
-    summary: Security auditing tool for npm packages
-    description: |
-      NPM Security Auditter analyzes npm packages for security issues including:
-      - Tarball content analysis
-      - Dynamic sandbox execution
-      - Network behavior monitoring
-      - Suspicious pattern detection
-    release_notes: "https://github.com/kluth/npm-security-auditter/releases/tag/v{{ .Version }}"
-    api_key: "{{ .Env.CHOCOLATEY_API_KEY }}"
-    source_repo: "https://push.chocolatey.org/"
-    skip_publish: false
-
-# Universal binaries for macOS
+# macOS universal binary
 universal_binaries:
   - replace: true
-
-# macOS DMG installer
-dmg:
-  - id: macos-dmg
-    ids:
-      - npm-security-auditter
-    name_template: "{{ .ProjectName }}_{{ .Version }}_macOS_Universal"
-    replace: true
 
 checksum:
   name_template: 'checksums.txt'
   algorithm: sha256
-
-# Sign macOS binaries (if configured)
-signs:
-  - artifacts: checksum
-    args:
-      - "--batch"
-      - "--local-user"
-      - "{{ .Env.GPG_FINGERPRINT }}"
-      - "--output"
-      - "${signature}"
-      - "--detach-sign"
-      - "${artifact}"
 
 # Create GitHub release
 release:
@@ -155,31 +83,39 @@ release:
 
     ### Installation
 
-    **macOS (Homebrew):**
+    **macOS (PKG installer):**
+    Download `auditter_v{{.Version}}_macOS_Universal.pkg` from assets below.
+
+    **macOS (Homebrew - manual):**
     ```bash
-    brew install kluth/tap/auditter
+    brew install --cask ./auditter_{{.Version}}_darwin_arm64.tar.gz
     ```
 
-    **Linux (DEB):**
+    **Linux (DEB - Debian/Ubuntu):**
     ```bash
     sudo dpkg -i auditter_{{.Version}}_linux_amd64.deb
     ```
 
-    **Linux (RPM):**
+    **Linux (RPM - Fedora/RHEL):**
     ```bash
     sudo rpm -i auditter_{{.Version}}_linux_amd64.rpm
     ```
 
-    **Windows (Scoop):**
-    ```powershell
-    scoop bucket add kluth https://github.com/kluth/scoop-bucket
-    scoop install auditter
+    **Linux (APK - Alpine):**
+    ```bash
+    sudo apk add --allow-untrusted auditter_{{.Version}}_linux_amd64.apk
     ```
 
-    **Windows (Chocolatey):**
-    ```powershell
-    choco install auditter
+    **Linux (Arch):**
+    ```bash
+    sudo pacman -U auditter_{{.Version}}_linux_amd64.pkg.tar.zst
     ```
+
+    **Windows (Installer):**
+    Download `auditter_v{{.Version}}_windows_amd64_installer.exe` from assets below.
+
+    **Windows (Manual):**
+    Download `npm-security-auditter_{{.Version}}_windows_amd64.zip` and add to PATH.
 
     **Manual download:** See assets below for your platform.
 
@@ -191,16 +127,16 @@ changelog:
       - '^test:'
       - '^ci:'
   groups:
-    - title: '🚀 Features'
+    - title: 'Features'
       regexp: '^feat'
       order: 0
-    - title: '🐛 Bug Fixes'
+    - title: 'Bug Fixes'
       regexp: '^fix'
       order: 1
-    - title: '🔒 Security'
+    - title: 'Security'
       regexp: '^sec'
       order: 2
-    - title: '📦 Dependencies'
+    - title: 'Dependencies'
       regexp: '^deps'
       order: 3
     - title: 'Other'
