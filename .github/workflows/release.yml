@@ -8,9 +8,13 @@ on:
 permissions:
   contents: write
 
+env:
+  GO_VERSION: '1.23'
+
 jobs:
-  goreleaser:
-    runs-on: ubuntu-latest
+  # Build Windows installer with NSIS
+  windows-installer:
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,7 +24,162 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build Windows binaries
+        run: |
+          $env:CGO_ENABLED=0
+          $env:GOOS="windows"
+          $env:GOARCH="amd64"
+          go build -ldflags="-s -w" -o dist/auditter-amd64.exe ./cmd/auditter
+          $env:GOARCH="arm64"
+          go build -ldflags="-s -w" -o dist/auditter-arm64.exe ./cmd/auditter
+
+      - name: Create NSIS installer script
+        run: |
+          @"
+          !include "MUI2.nsh"
+
+          Name "NPM Security Auditter"
+          OutFile "dist\auditter_${{ github.ref_name }}_windows_amd64_installer.exe"
+          InstallDir "`$PROGRAMFILES\auditter"
+          RequestExecutionLevel admin
+
+          !insertmacro MUI_PAGE_WELCOME
+          !insertmacro MUI_PAGE_LICENSE "LICENSE"
+          !insertmacro MUI_PAGE_DIRECTORY
+          !insertmacro MUI_PAGE_INSTFILES
+          !insertmacro MUI_PAGE_FINISH
+
+          !insertmacro MUI_UNPAGE_CONFIRM
+          !insertmacro MUI_UNPAGE_INSTFILES
+
+          !insertmacro MUI_LANGUAGE "English"
+
+          Section "Install"
+            SetOutPath "`$INSTDIR"
+            File "dist\auditter-amd64.exe"
+            Rename "`$INSTDIR\auditter-amd64.exe" "`$INSTDIR\auditter.exe"
+
+            ; Add to PATH
+            EnVar::AddValue "PATH" "`$INSTDIR"
+
+            ; Create uninstaller
+            WriteUninstaller "`$INSTDIR\uninstall.exe"
+
+            ; Create Start Menu shortcut
+            CreateDirectory "`$SMPROGRAMS\NPM Security Auditter"
+            CreateShortcut "`$SMPROGRAMS\NPM Security Auditter\Uninstall.lnk" "`$INSTDIR\uninstall.exe"
+
+            ; Registry for Add/Remove Programs
+            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\auditter" "DisplayName" "NPM Security Auditter"
+            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\auditter" "UninstallString" "`$INSTDIR\uninstall.exe"
+            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\auditter" "DisplayVersion" "${{ github.ref_name }}"
+            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\auditter" "Publisher" "Matthias Kluth"
+          SectionEnd
+
+          Section "Uninstall"
+            Delete "`$INSTDIR\auditter.exe"
+            Delete "`$INSTDIR\uninstall.exe"
+            RMDir "`$INSTDIR"
+
+            ; Remove from PATH
+            EnVar::DeleteValue "PATH" "`$INSTDIR"
+
+            ; Remove Start Menu
+            Delete "`$SMPROGRAMS\NPM Security Auditter\Uninstall.lnk"
+            RMDir "`$SMPROGRAMS\NPM Security Auditter"
+
+            ; Remove registry
+            DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\auditter"
+          SectionEnd
+          "@ | Out-File -FilePath installer.nsi -Encoding UTF8
+
+      - name: Install NSIS
+        run: choco install nsis -y
+
+      - name: Install EnVar plugin
+        run: |
+          Invoke-WebRequest -Uri "https://nsis.sourceforge.io/mediawiki/images/7/7f/EnVar_plugin.zip" -OutFile envar.zip
+          Expand-Archive -Path envar.zip -DestinationPath envar
+          Copy-Item -Path "envar\Plugins\x86-unicode\*.dll" -Destination "C:\Program Files (x86)\NSIS\Plugins\x86-unicode\" -Force
+          Copy-Item -Path "envar\Plugins\amd64-unicode\*.dll" -Destination "C:\Program Files (x86)\NSIS\Plugins\amd64-unicode\" -Force -ErrorAction SilentlyContinue
+
+      - name: Build installer
+        run: |
+          & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/*_installer.exe
+
+  # Build macOS PKG installer
+  macos-installer:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build macOS universal binary
+        run: |
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/auditter-amd64 ./cmd/auditter
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/auditter-arm64 ./cmd/auditter
+          lipo -create -output dist/auditter dist/auditter-amd64 dist/auditter-arm64
+
+      - name: Create PKG installer
+        run: |
+          mkdir -p pkg-root/usr/local/bin
+          cp dist/auditter pkg-root/usr/local/bin/
+          chmod +x pkg-root/usr/local/bin/auditter
+
+          pkgbuild \
+            --root pkg-root \
+            --identifier com.kluth.auditter \
+            --version ${{ github.ref_name }} \
+            --install-location / \
+            "dist/auditter_${{ github.ref_name }}_macOS_Universal.pkg"
+
+      - name: Upload macOS PKG
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: dist/*.pkg
+
+  # Main release job with GoReleaser
+  goreleaser:
+    runs-on: ubuntu-latest
+    needs: [windows-installer, macos-installer]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/
+
+      - name: Download macOS installer
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-installer
+          path: dist/
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
@@ -28,5 +187,18 @@ jobs:
           distribution: goreleaser
           version: latest
           args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+          GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
+
+      - name: Upload extra installers to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*_installer.exe
+            dist/*.pkg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
