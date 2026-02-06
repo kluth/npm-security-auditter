@@ -173,13 +173,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: windows-installer
-          path: dist/
+          path: installers/
 
       - name: Download macOS installer
         uses: actions/download-artifact@v4
         with:
           name: macos-installer
-          path: dist/
+          path: installers/
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
@@ -190,11 +190,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload extra installers to release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/*_installer.exe
-            dist/*.pkg
+      - name: Upload platform installers to release
+        run: |
+          gh release upload ${{ github.ref_name }} installers/* --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
