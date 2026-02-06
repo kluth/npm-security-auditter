@@ -210,6 +210,9 @@ func (a *TarballAnalyzer) scanJSFiles(ep *tarball.ExtractedPackage) []Finding {
 	sideA := NewSideEffectAnalyzer()
 	netA := NewPrivateNetworkAnalyzer()
 	urlA := NewSuspiciousURLAnalyzer()
+	exfilA := NewExfiltrationAnalyzer()
+	aiA := NewAIEvasionAnalyzer()
+	behaviorA := NewBehaviorSequenceAnalyzer()
 
 	for _, f := range ep.Files {
 		if !f.IsJS {
@@ -231,6 +234,12 @@ func (a *TarballAnalyzer) scanJSFiles(ep *tarball.ExtractedPackage) []Finding {
 		findings = append(findings, netA.scanContent(content, f.Path)...)
 		// URLs
 		findings = append(findings, urlA.scanContent(content, f.Path)...)
+		// Exfiltration endpoints
+		findings = append(findings, exfilA.scanContent(content, f.Path)...)
+		// AI evasion attempts
+		findings = append(findings, aiA.scanContent(content, f.Path)...)
+		// Behavior sequences
+		findings = append(findings, behaviorA.scanContent(content, f.Path)...)
 
 		for _, pat := range maliciousJSPatterns {
 			if pat.Pattern.Match(contentBytes) {

