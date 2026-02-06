@@ -53,7 +53,7 @@ func main() {
   auditter express --json --output report.json
   auditter --project package.json --severity high
   auditter --node-modules --format html --output audit.html`,
-		Version: "1.9.0",
+		Version: "2.1.0",
 		RunE:    run,
 	}
 
@@ -147,9 +147,11 @@ func run(cmd *cobra.Command, args []string) error {
 		analyzer.NewVulnAnalyzer(),
 		analyzer.NewScriptsAnalyzer(),
 		analyzer.NewTyposquatAnalyzer(),
+		analyzer.NewSlopsquattingAnalyzer(),
 		analyzer.NewMaintainerAnalyzer(),
 		analyzer.NewMetadataAnalyzer(),
 		analyzer.NewDepsAnalyzer(),
+		analyzer.NewRemoteDepsAnalyzer(),
 		analyzer.NewBinaryAnalyzer(),
 		analyzer.NewProvenanceAnalyzer(),
 		analyzer.NewTarballAnalyzer(),
@@ -159,6 +161,12 @@ func run(cmd *cobra.Command, args []string) error {
 		analyzer.NewScorecardAnalyzer(),
 		analyzer.NewCommitHistoryAnalyzer(),
 		analyzer.NewDownloadAnalyzer(),
+		analyzer.NewManifestConfusionAnalyzer(),
+		analyzer.NewVersionAnomalyAnalyzer(),
+		analyzer.NewStarjackingAnalyzer(),
+		analyzer.NewCommunityTrustAnalyzer(),
+		analyzer.NewReproducibleBuildAnalyzer(),
+		analyzer.NewCodeSigningAnalyzer(),
 	}
 	if !noSandbox {
 		analyzers = append(analyzers, analyzer.NewSandboxAnalyzer())

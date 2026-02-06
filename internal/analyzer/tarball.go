@@ -213,6 +213,36 @@ func (a *TarballAnalyzer) scanJSFiles(ep *tarball.ExtractedPackage) []Finding {
 	exfilA := NewExfiltrationAnalyzer()
 	aiA := NewAIEvasionAnalyzer()
 	behaviorA := NewBehaviorSequenceAnalyzer()
+	astA := NewASTAnalyzer()
+	taintA := NewTaintAnalyzer()
+	envFpA := NewEnvFingerprintAnalyzer()
+	multilayerA := NewMultilayerObfuscationAnalyzer()
+	antiDbgA := NewAntiDebugAnalyzer()
+	phantomA := NewPhantomDepsAnalyzer()
+	timebombA := NewTimeBombAnalyzer()
+	cryptoA := NewCryptoTheftAnalyzer()
+	loaderA := NewMultiStageLoaderAnalyzer()
+	protoA := NewProtoPollutionAnalyzer()
+	wormA := NewWormAnalyzer()
+	phishA := NewPhishingAnalyzer()
+
+	// Extract declared dependencies for phantom dep detection
+	var declaredDeps map[string]string
+	if ep.PackageJSON != nil {
+		var pkgJSON struct {
+			Dependencies    map[string]string `json:"dependencies"`
+			DevDependencies map[string]string `json:"devDependencies"`
+		}
+		if err := json.Unmarshal(ep.PackageJSON, &pkgJSON); err == nil {
+			declaredDeps = make(map[string]string)
+			for k, v := range pkgJSON.Dependencies {
+				declaredDeps[k] = v
+			}
+			for k, v := range pkgJSON.DevDependencies {
+				declaredDeps[k] = v
+			}
+		}
+	}
 
 	for _, f := range ep.Files {
 		if !f.IsJS {
@@ -240,6 +270,32 @@ func (a *TarballAnalyzer) scanJSFiles(ep *tarball.ExtractedPackage) []Finding {
 		findings = append(findings, aiA.scanContent(content, f.Path)...)
 		// Behavior sequences
 		findings = append(findings, behaviorA.scanContent(content, f.Path)...)
+		// AST-based deep analysis
+		findings = append(findings, astA.scanContent(content, f.Path)...)
+		// Taint-based code slicing
+		findings = append(findings, taintA.scanContent(content, f.Path)...)
+		// Environment fingerprinting
+		findings = append(findings, envFpA.scanContent(content, f.Path)...)
+		// Multi-layer obfuscation
+		findings = append(findings, multilayerA.scanContent(content, f.Path)...)
+		// Anti-debug evasion
+		findings = append(findings, antiDbgA.scanContent(content, f.Path)...)
+		// Phantom dependencies
+		if declaredDeps != nil {
+			findings = append(findings, phantomA.scanContentWithDeps(content, f.Path, declaredDeps)...)
+		}
+		// Time-bomb detection
+		findings = append(findings, timebombA.scanContent(content, f.Path)...)
+		// Cryptocurrency theft
+		findings = append(findings, cryptoA.scanContent(content, f.Path)...)
+		// Multi-stage loader
+		findings = append(findings, loaderA.scanContent(content, f.Path)...)
+		// Prototype pollution
+		findings = append(findings, protoA.scanContent(content, f.Path)...)
+		// Worm detection
+		findings = append(findings, wormA.scanContent(content, f.Path)...)
+		// Phishing infrastructure
+		findings = append(findings, phishA.scanContent(content, f.Path)...)
 
 		for _, pat := range maliciousJSPatterns {
 			if pat.Pattern.Match(contentBytes) {
