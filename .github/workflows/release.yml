@@ -169,6 +169,15 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Download Windows installer
         uses: actions/download-artifact@v4
         with:
@@ -180,15 +189,6 @@ jobs:
         with:
           name: macos-installer
           path: installers/
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload platform installers to release
         run: |
