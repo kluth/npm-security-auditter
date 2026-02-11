@@ -38,9 +38,9 @@ func TestStarjackingAnalyzer_DetectMismatch(t *testing.T) {
 		"evil-lodash",
 		time.Now().Add(-24*time.Hour),
 		time.Now().Add(-5*365*24*time.Hour), // repo created 5 years ago
-		15000,                                // lots of stars
-		50,                                   // many forks
-		"lodash/lodash",                      // pointing to famous repo
+		15000,           // lots of stars
+		50,              // many forks
+		"lodash/lodash", // pointing to famous repo
 	)
 
 	found := false
@@ -64,7 +64,7 @@ func TestStarjackingAnalyzer_NewPackagePopularRepo(t *testing.T) {
 	// Very new package pointing to repo with high stars
 	findings := a.analyzeStarjacking(
 		"new-pkg",
-		time.Now().Add(-2*24*time.Hour), // created 2 days ago
+		time.Now().Add(-2*24*time.Hour),     // created 2 days ago
 		time.Now().Add(-3*365*24*time.Hour), // repo created 3 years ago
 		5000,
 		100,

@@ -39,10 +39,10 @@ func TestMaintainerAnalyzer_PublishAnomalies(t *testing.T) {
 			{Name: "u2", Email: "u2@co.com"},
 		},
 		Time: map[string]time.Time{
-			"created":  now.Add(-3 * 365 * 24 * time.Hour),    // created 3 years ago
-			"modified": now.Add(-5 * 24 * time.Hour),           // modified 5 days ago
-			"1.0.0":    now.Add(-2 * 365 * 24 * time.Hour),     // published 2 years ago
-			"1.0.1":    now.Add(-5 * 24 * time.Hour),           // recent (within 30 days)
+			"created":  now.Add(-3 * 365 * 24 * time.Hour), // created 3 years ago
+			"modified": now.Add(-5 * 24 * time.Hour),       // modified 5 days ago
+			"1.0.0":    now.Add(-2 * 365 * 24 * time.Hour), // published 2 years ago
+			"1.0.1":    now.Add(-5 * 24 * time.Hour),       // recent (within 30 days)
 		},
 	}
 	ver := &registry.PackageVersion{}

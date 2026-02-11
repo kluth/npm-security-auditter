@@ -29,12 +29,12 @@ func (a *StarjackingAnalyzer) Name() string {
 }
 
 type githubRepoInfo struct {
-	FullName   string    `json:"full_name"`
-	CreatedAt  time.Time `json:"created_at"`
-	Stars      int       `json:"stargazers_count"`
-	Forks      int       `json:"forks_count"`
-	Archived   bool      `json:"archived"`
-	Fork       bool      `json:"fork"`
+	FullName  string    `json:"full_name"`
+	CreatedAt time.Time `json:"created_at"`
+	Stars     int       `json:"stargazers_count"`
+	Forks     int       `json:"forks_count"`
+	Archived  bool      `json:"archived"`
+	Fork      bool      `json:"fork"`
 }
 
 func (a *StarjackingAnalyzer) Analyze(ctx context.Context, pkg *registry.PackageMetadata, version *registry.PackageVersion) ([]Finding, error) {

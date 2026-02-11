@@ -274,9 +274,9 @@ func TestParseRepoURL(t *testing.T) {
 
 func TestJaccardWordSimilarity(t *testing.T) {
 	tests := []struct {
-		a, b     string
-		minSim   float64
-		maxSim   float64
+		a, b   string
+		minSim float64
+		maxSim float64
 	}{
 		{"hello world", "hello world", 1.0, 1.0},
 		{"hello world", "goodbye moon", 0.0, 0.01},

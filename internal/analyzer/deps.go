@@ -23,35 +23,35 @@ func (d *DepsAnalyzer) Analyze(_ context.Context, pkg *registry.PackageMetadata,
 
 	totalDeps := len(deps)
 
-	        // Flag excessive dependencies
-	        if totalDeps > 50 {
-	                findings = append(findings, Finding{
-	                        Analyzer:    d.Name(),
-	                        Title:       "Excessive dependencies",
-	                        Description: fmt.Sprintf("Package has %d direct dependencies", totalDeps),
-	                        Severity:    SeverityMedium,
-	                        ExploitExample: fmt.Sprintf(
-	                                "Each dependency is an entry point for supply chain attacks:\n"+
-	                                        "    - %d direct deps means potentially hundreds of transitive deps\n"+
-	                                        "    - Compromising ANY one of them compromises this package\n"+
-	                                        "    - event-stream attack: malicious code was 3 levels deep in the dep tree\n"+
-	                                        "    - Run `npm ls --all` to see the full transitive dependency tree", totalDeps),
-	                        Remediation: "Review the dependency list and remove any unnecessary packages. For critical projects, consider vendoring small dependencies or implementing stricter sub-dependency auditing.",
-	                })
-	        } else if totalDeps > 20 {
-	                findings = append(findings, Finding{
-	                        Analyzer:    d.Name(),
-	                        Title:       "Many dependencies",
-	                        Description: fmt.Sprintf("Package has %d direct dependencies", totalDeps),
-	                        Severity:    SeverityLow,
-	                        ExploitExample: "A wide dependency tree increases the attack surface:\n" +
-	                                "    - More packages = more maintainer accounts to potentially compromise\n" +
-	                                "    - Each transitive dependency is an implicit trust relationship\n" +
-	                                "    - Consider auditing the full tree: npm audit && npm ls --all",
-	                        Remediation: "Regularly audit your dependencies and keep them updated to minimize the risk from stale or vulnerable sub-dependencies.",
-	                })
-	        }
-		// Check for dependency confusion risks
+	// Flag excessive dependencies
+	if totalDeps > 50 {
+		findings = append(findings, Finding{
+			Analyzer:    d.Name(),
+			Title:       "Excessive dependencies",
+			Description: fmt.Sprintf("Package has %d direct dependencies", totalDeps),
+			Severity:    SeverityMedium,
+			ExploitExample: fmt.Sprintf(
+				"Each dependency is an entry point for supply chain attacks:\n"+
+					"    - %d direct deps means potentially hundreds of transitive deps\n"+
+					"    - Compromising ANY one of them compromises this package\n"+
+					"    - event-stream attack: malicious code was 3 levels deep in the dep tree\n"+
+					"    - Run `npm ls --all` to see the full transitive dependency tree", totalDeps),
+			Remediation: "Review the dependency list and remove any unnecessary packages. For critical projects, consider vendoring small dependencies or implementing stricter sub-dependency auditing.",
+		})
+	} else if totalDeps > 20 {
+		findings = append(findings, Finding{
+			Analyzer:    d.Name(),
+			Title:       "Many dependencies",
+			Description: fmt.Sprintf("Package has %d direct dependencies", totalDeps),
+			Severity:    SeverityLow,
+			ExploitExample: "A wide dependency tree increases the attack surface:\n" +
+				"    - More packages = more maintainer accounts to potentially compromise\n" +
+				"    - Each transitive dependency is an implicit trust relationship\n" +
+				"    - Consider auditing the full tree: npm audit && npm ls --all",
+			Remediation: "Regularly audit your dependencies and keep them updated to minimize the risk from stale or vulnerable sub-dependencies.",
+		})
+	}
+	// Check for dependency confusion risks
 	d.checkConfusionRisks(deps, &findings)
 	d.checkConfusionRisks(devDeps, &findings)
 
@@ -68,12 +68,12 @@ func (d *DepsAnalyzer) checkCircularDependencies(pkgName string, deps map[string
 	for name := range deps {
 		if name == pkgName {
 			*findings = append(*findings, Finding{
-				Analyzer:    d.Name(),
-				Title:       "Self-referencing dependency",
-				Description: fmt.Sprintf("Package %q lists itself as a dependency", pkgName),
-				Severity:    SeverityMedium,
+				Analyzer:       d.Name(),
+				Title:          "Self-referencing dependency",
+				Description:    fmt.Sprintf("Package %q lists itself as a dependency", pkgName),
+				Severity:       SeverityMedium,
 				ExploitExample: "Self-referencing dependencies can cause infinite loops in some build or installation tools.",
-				Remediation: "Remove the self-reference from the dependencies list in package.json.",
+				Remediation:    "Remove the self-reference from the dependencies list in package.json.",
 			})
 		}
 	}
@@ -96,10 +96,10 @@ func (d *DepsAnalyzer) checkConfusionRisks(deps map[string]string, findings *[]F
 						"    3. Build system resolves from public npm instead of private registry\n"+
 						"    4. Attacker's code runs inside the company's CI/CD pipeline\n"+
 						"    This attack compromised Apple, Microsoft, and PayPal in 2021.",
-					                                        name, name),
-					                                Remediation: fmt.Sprintf("Use scoped packages (e.g., @company/%s) for all internal dependencies to prevent them from being resolved from the public registry. Configure your .npmrc to point to your private registry for the scope.", name),
-					                        })
-					
+					name, name),
+				Remediation: fmt.Sprintf("Use scoped packages (e.g., @company/%s) for all internal dependencies to prevent them from being resolved from the public registry. Configure your .npmrc to point to your private registry for the scope.", name),
+			})
+
 		}
 	}
 }
@@ -138,10 +138,10 @@ func (d *DepsAnalyzer) checkUnsafeVersions(deps map[string]string, findings *[]F
 						"    - If an attacker compromises %q, every install gets the malicious version\n"+
 						"    - No lockfile protection: npm install in CI always fetches latest\n"+
 						"    - Fix: pin exact versions or use a lockfile (package-lock.json)",
-					                                        name, version, name),
-					                                Remediation: "Pin dependencies to exact versions or use a lockfile (package-lock.json). Never use '*' or 'latest' for production dependencies.",
-					                        })
-					
+					name, version, name),
+				Remediation: "Pin dependencies to exact versions or use a lockfile (package-lock.json). Never use '*' or 'latest' for production dependencies.",
+			})
+
 		} else if strings.HasPrefix(version, ">") && !strings.Contains(version, "<") {
 			*findings = append(*findings, Finding{
 				Analyzer:    d.Name(),
@@ -153,10 +153,10 @@ func (d *DepsAnalyzer) checkUnsafeVersions(deps map[string]string, findings *[]F
 						"    - %q at %q has no upper bound\n"+
 						"    - A compromised future release auto-installs for all consumers\n"+
 						"    - Use exact versions or caret ranges with lockfiles instead",
-					                                        name, version),
-					                                Remediation: "Add an upper bound to your version range (e.g., ^1.2.3 instead of >1.2.3) to prevent accidental upgrades to incompatible or compromised major versions.",
-					                        })
-					
+					name, version),
+				Remediation: "Add an upper bound to your version range (e.g., ^1.2.3 instead of >1.2.3) to prevent accidental upgrades to incompatible or compromised major versions.",
+			})
+
 		}
 	}
 }

@@ -11,7 +11,7 @@
 [![Release](https://github.com/kluth/npm-security-auditter/actions/workflows/release.yml/badge.svg)](https://github.com/kluth/npm-security-auditter/actions/workflows/release.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/kluth/npm-security-auditter)](https://goreportcard.com/report/github.com/kluth/npm-security-auditter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Go Version](https://img.shields.io/github/go-mod-go-version/kluth/npm-security-auditter)](https://github.com/kluth/npm-security-auditter)
+[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go&logoColor=white)](https://github.com/kluth/npm-security-auditter)
 [![Latest Release](https://img.shields.io/github/v/release/kluth/npm-security-auditter?color=blue)](https://github.com/kluth/npm-security-auditter/releases)
 [![Tests](https://img.shields.io/badge/tests-381_passing-brightgreen)](#)
 

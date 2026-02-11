@@ -107,11 +107,11 @@ func (a *TaintAnalyzer) scanContent(content string, filename string) []Finding {
 // isCriticalTaintPair checks if a source-sink combination is particularly dangerous.
 func isCriticalTaintPair(source, sink string) bool {
 	criticalPairs := map[string][]string{
-		"environment variables":  {"network request", "DNS/network exfiltration", "WebSocket transmission"},
-		"sensitive file access":  {"network request", "DNS/network exfiltration", "WebSocket transmission"},
-		"file system read":       {"network request", "DNS/network exfiltration"},
+		"environment variables":    {"network request", "DNS/network exfiltration", "WebSocket transmission"},
+		"sensitive file access":    {"network request", "DNS/network exfiltration", "WebSocket transmission"},
+		"file system read":         {"network request", "DNS/network exfiltration"},
 		"encoded environment data": {"network request", "DNS/network exfiltration"},
-		"OS information":         {"network request"},
+		"OS information":           {"network request"},
 	}
 
 	sinks, ok := criticalPairs[source]

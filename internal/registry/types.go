@@ -4,43 +4,43 @@ import "time"
 
 // PackageMetadata represents the full metadata for an npm package.
 type PackageMetadata struct {
-	Name        string                       `json:"name"`
-	Description string                       `json:"description"`
-	DistTags    map[string]string            `json:"dist-tags"`
-	Versions    map[string]PackageVersion    `json:"versions"`
-	Time        map[string]time.Time         `json:"time"`
-	Maintainers []Maintainer                 `json:"maintainers"`
-	Repository  *Repository                  `json:"repository,omitempty"`
-	License     string                       `json:"license"`
-	Readme      string                       `json:"readme"`
+	Name        string                    `json:"name"`
+	Description string                    `json:"description"`
+	DistTags    map[string]string         `json:"dist-tags"`
+	Versions    map[string]PackageVersion `json:"versions"`
+	Time        map[string]time.Time      `json:"time"`
+	Maintainers []Maintainer              `json:"maintainers"`
+	Repository  *Repository               `json:"repository,omitempty"`
+	License     string                    `json:"license"`
+	Readme      string                    `json:"readme"`
 }
 
 // PackageVersion represents a specific version of a package.
 type PackageVersion struct {
-	Name            string            `json:"name"`
-	Version         string            `json:"version"`
-	Description     string            `json:"description"`
-	Main            string            `json:"main"`
-	Scripts         map[string]string `json:"scripts"`
-	Dependencies    map[string]string `json:"dependencies"`
-	DevDependencies map[string]string `json:"devDependencies"`
-	Dist            Dist              `json:"dist"`
-	Maintainers     []Maintainer      `json:"maintainers"`
-	Repository      *Repository       `json:"repository,omitempty"`
-	License         string            `json:"license"`
-	Homepage        string            `json:"homepage,omitempty"`
-	Deprecated      string            `json:"deprecated,omitempty"`
-	HasInstallScript bool             `json:"hasInstallScript,omitempty"`
-	Binary          interface{}       `json:"binary,omitempty"`
-	GypFile         bool              `json:"gypfile,omitempty"`
+	Name             string            `json:"name"`
+	Version          string            `json:"version"`
+	Description      string            `json:"description"`
+	Main             string            `json:"main"`
+	Scripts          map[string]string `json:"scripts"`
+	Dependencies     map[string]string `json:"dependencies"`
+	DevDependencies  map[string]string `json:"devDependencies"`
+	Dist             Dist              `json:"dist"`
+	Maintainers      []Maintainer      `json:"maintainers"`
+	Repository       *Repository       `json:"repository,omitempty"`
+	License          string            `json:"license"`
+	Homepage         string            `json:"homepage,omitempty"`
+	Deprecated       string            `json:"deprecated,omitempty"`
+	HasInstallScript bool              `json:"hasInstallScript,omitempty"`
+	Binary           interface{}       `json:"binary,omitempty"`
+	GypFile          bool              `json:"gypfile,omitempty"`
 }
 
 // Dist contains distribution info for a package version.
 type Dist struct {
-	Tarball   string `json:"tarball"`
-	Shasum    string `json:"shasum"`
-	Integrity string `json:"integrity"`
-	Signatures []Signature `json:"signatures,omitempty"`
+	Tarball      string        `json:"tarball"`
+	Shasum       string        `json:"shasum"`
+	Integrity    string        `json:"integrity"`
+	Signatures   []Signature   `json:"signatures,omitempty"`
 	Attestations *Attestations `json:"attestations,omitempty"`
 }
 
@@ -52,8 +52,8 @@ type Signature struct {
 
 // Attestations represents provenance attestations.
 type Attestations struct {
-	URL         string        `json:"url"`
-	Provenance  *Provenance   `json:"provenance,omitempty"`
+	URL        string      `json:"url"`
+	Provenance *Provenance `json:"provenance,omitempty"`
 }
 
 // Provenance represents build provenance info.

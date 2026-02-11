@@ -40,10 +40,10 @@ func (a *TelemetryAnalyzer) scanContent(content, filename string) []Finding {
 	for _, p := range telemetryPatterns {
 		if p.pattern.MatchString(content) {
 			findings = append(findings, Finding{
-				Analyzer:    a.Name(),
-				Title:       "Telemetry/Analytics detected",
-				Description: "The package contains code or URLs associated with telemetry or analytics tracking in " + filename,
-				Severity:    p.severity,
+				Analyzer:       a.Name(),
+				Title:          "Telemetry/Analytics detected",
+				Description:    "The package contains code or URLs associated with telemetry or analytics tracking in " + filename,
+				Severity:       p.severity,
 				ExploitExample: "// Example of data collection\nanalytics.track('install_event', { user: os.userInfo() });",
 				Remediation:    "Review if this telemetry is documented and if it can be disabled. For sensitive environments, block these domains at the network level.",
 			})

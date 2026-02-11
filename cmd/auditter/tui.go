@@ -93,88 +93,108 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "esc":
-			if m.state == stateConfig {
-				m.state = stateInput
-				return m, nil
-			}
-			return m, tea.Quit
-		case "backspace":
-			if m.state == stateConfig {
-				m.state = stateInput
-				return m, nil
-			}
-		case "enter":
-			if m.state == stateInput {
-				m.pkgName = m.pkgInput.Value()
-				if m.pkgName != "" {
-					m.state = stateConfig
-				}
-				return m, nil
-			}
-			if m.state == stateConfig {
-				if m.cursor == 2 {
-					m.state = stateRunning
-					return m, m.runAudit
-				}
-			}
-			if m.state == stateDone {
-				return m, tea.Quit
-			}
-		case "up", "k":
-			if m.state == stateConfig {
-				if m.cursor > 0 {
-					m.cursor--
-				}
-			}
-		case "down", "j":
-			if m.state == stateConfig {
-				if m.cursor < 2 { // format, lang, start
-					m.cursor++
-				}
-			}
-		case "left", "h":
-			if m.state == stateConfig {
-				if m.cursor == 0 && m.selectedFormat > 0 {
-					m.selectedFormat--
-				} else if m.cursor == 1 && m.selectedLang > 0 {
-					m.selectedLang--
-				}
-			}
-		case "right", "l":
-			if m.state == stateConfig {
-				if m.cursor == 0 && m.selectedFormat < len(m.formats)-1 {
-					m.selectedFormat++
-				} else if m.cursor == 1 && m.selectedLang < len(m.langs)-1 {
-					m.selectedLang++
-				}
-			}
-		}
-
+		return m.handleKeyMsg(msg)
 	case auditResultMsg:
 		m.state = stateDone
 		m.resultMsg = msg.summary
 		m.reportContent = msg.content
-		return m, nil // Don't quit immediately so user can see result
+		return m, nil
 	}
 
+	return m.handleStateUpdate(msg)
+}
+
+func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+
+	switch m.state {
+	case stateInput:
+		return m.handleInputKey(msg)
+	case stateConfig:
+		return m.handleConfigKey(msg)
+	case stateDone:
+		if msg.String() == "enter" {
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		return m, tea.Quit
+	case "enter":
+		m.pkgName = m.pkgInput.Value()
+		if m.pkgName != "" {
+			m.state = stateConfig
+		}
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.pkgInput, cmd = m.pkgInput.Update(msg)
+	return m, cmd
+}
+
+func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "backspace":
+		m.state = stateInput
+		return m, nil
+	case "enter":
+		if m.cursor == 2 {
+			m.state = stateRunning
+			return m, m.runAudit
+		}
+	case "up", "k":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case "down", "j":
+		if m.cursor < 2 {
+			m.cursor++
+		}
+	case "left", "h":
+		m.adjustSelection(-1)
+	case "right", "l":
+		m.adjustSelection(1)
+	}
+	return m, nil
+}
+
+func (m *model) adjustSelection(delta int) {
+	switch m.cursor {
+	case 0:
+		m.selectedFormat = clampInt(m.selectedFormat+delta, 0, len(m.formats)-1)
+	case 1:
+		m.selectedLang = clampInt(m.selectedLang+delta, 0, len(m.langs)-1)
+	}
+}
+
+func clampInt(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+func (m model) handleStateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	if m.state == stateInput {
 		m.pkgInput, cmd = m.pkgInput.Update(msg)
 		return m, cmd
 	}
-
 	if m.state == stateRunning {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 	}
-
 	return m, nil
 }
 
@@ -314,7 +334,7 @@ func (m model) runAudit() tea.Msg {
 	safePkgName := strings.ReplaceAll(m.pkgName, "/", "-")
 	safePkgName = strings.ReplaceAll(safePkgName, "@", "")
 	filename := fmt.Sprintf("audit-%s.%s", safePkgName, format)
-	
+
 	var out io.Writer
 	var buf bytes.Buffer
 	var isTerminal bool
@@ -339,7 +359,7 @@ func (m model) runAudit() tea.Msg {
 	const colorReset = "\033[0m"
 	scoreColor, scoreLabel := rep.GetRiskLevel(report.Score)
 	summary := fmt.Sprintf("Audit Score: %s%d/100 (%s)%s\n", scoreColor, report.Score, scoreLabel, colorReset)
-	
+
 	if isTerminal {
 		return auditResultMsg{
 			summary: summary + "Report generated below:",

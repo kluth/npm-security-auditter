@@ -86,12 +86,12 @@ func (r *Runner) Run(ctx context.Context, pkgName, pkgVersion string) (*HarnessO
 	cmd.Env = env
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	
+
 	// Apply platform-specific isolation (Namespaces on Linux, Job Objects on Windows)
 	applyPlatformIsolation(cmd)
 
 	if err := cmd.Run(); err != nil {
-		// If it failed with isolation, try one last time without it ONLY on Linux 
+		// If it failed with isolation, try one last time without it ONLY on Linux
 		// (sometimes namespaces are restricted by kernel policy)
 		if runtime.GOOS == "linux" && stdout.Len() == 0 {
 			isolated = false

@@ -64,14 +64,14 @@ func (a *ShellScriptAnalyzer) Analyze(ctx context.Context, pkg *registry.Package
 	for scriptName, scriptContent := range version.Scripts {
 		for _, pat := range shellPatterns {
 			if pat.pattern.MatchString(scriptContent) {
-								findings = append(findings, Finding{
-									Analyzer:       a.Name(),
-									Title:          pat.title,
-									Description:    fmt.Sprintf("Script %q contains suspicious shell commands: %s", scriptName, pat.desc),
-									Severity:       pat.severity,
-									ExploitExample: fmt.Sprintf("In package.json: \"%s\": \"%s\"", scriptName, scriptContent),
-									Remediation:    "Remove dangerous lifecycle scripts or use --ignore-scripts during installation. Audit all scripts that download and execute remote content.",
-								})
+				findings = append(findings, Finding{
+					Analyzer:       a.Name(),
+					Title:          pat.title,
+					Description:    fmt.Sprintf("Script %q contains suspicious shell commands: %s", scriptName, pat.desc),
+					Severity:       pat.severity,
+					ExploitExample: fmt.Sprintf("In package.json: \"%s\": \"%s\"", scriptName, scriptContent),
+					Remediation:    "Remove dangerous lifecycle scripts or use --ignore-scripts during installation. Audit all scripts that download and execute remote content.",
+				})
 			}
 		}
 	}

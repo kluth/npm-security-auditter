@@ -195,7 +195,7 @@ func TestRenderWithErrors(t *testing.T) {
 
 func TestSeverityHelpers(t *testing.T) {
 	tests := []struct {
-		s    analyzer.Severity
+		s         analyzer.Severity
 		wantColor string
 		wantIcon  string
 	}{
@@ -218,7 +218,7 @@ func TestSeverityHelpers(t *testing.T) {
 func TestRiskLevel(t *testing.T) {
 	r := New(nil, FormatTerminal, LangEN)
 	tests := []struct {
-		score int
+		score     int
 		wantColor string
 		wantLabel string
 	}{
@@ -258,7 +258,7 @@ func TestPrintWrapped(t *testing.T) {
 	r := New(&buf, FormatTerminal, LangEN)
 
 	r.printWrapped(&buf, "this is a very long text that should be wrapped", "  ", 20)
-	
+
 	lines := strings.Split(buf.String(), "\n")
 	for _, line := range lines {
 		if len(line) > 20 && line != "" {
@@ -267,16 +267,9 @@ func TestPrintWrapped(t *testing.T) {
 	}
 }
 
-func TestSeverityColorForCount(t *testing.T) {
-	arg := struct {
-		name     string
-		total    int
-		critical int
-		high     int
-		medium   int
-		low      int
-	}{critical: 1}
-	if severityColorForCount(arg) != colorRed {
+func TestBreakdownColor(t *testing.T) {
+	arg := breakdownEntry{critical: 1}
+	if breakdownColor(arg) != colorRed {
 		t.Error("expected colorRed for critical")
 	}
 }
@@ -468,31 +461,22 @@ func TestSeverityIconDefault(t *testing.T) {
 	}
 }
 
-func TestSeverityColorForCountAllCases(t *testing.T) {
-	type entry struct {
-		name     string
-		total    int
-		critical int
-		high     int
-		medium   int
-		low      int
-	}
-
+func TestBreakdownColorAllCases(t *testing.T) {
 	tests := []struct {
-		e    entry
+		e    breakdownEntry
 		want string
 	}{
-		{entry{critical: 1, total: 1}, colorRed},
-		{entry{high: 1, total: 1}, colorRed},
-		{entry{medium: 1, total: 1}, colorYellow},
-		{entry{low: 1, total: 1}, colorDim},
-		{entry{total: 0}, colorDim},
+		{breakdownEntry{critical: 1, total: 1}, colorRed},
+		{breakdownEntry{high: 1, total: 1}, colorRed},
+		{breakdownEntry{medium: 1, total: 1}, colorYellow},
+		{breakdownEntry{low: 1, total: 1}, colorDim},
+		{breakdownEntry{total: 0}, colorDim},
 	}
 
 	for _, tt := range tests {
-		got := severityColorForCount(tt.e)
+		got := breakdownColor(tt.e)
 		if got != tt.want {
-			t.Errorf("severityColorForCount(%+v) = %q, want %q", tt.e, got, tt.want)
+			t.Errorf("breakdownColor(%+v) = %q, want %q", tt.e, got, tt.want)
 		}
 	}
 }
@@ -1205,10 +1189,10 @@ func TestSindarin(t *testing.T) {
 
 func TestMergeSimilarFindings(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    []analyzer.Finding
-		wantLen  int
-		wantMax  int // count of the most merged finding
+		name    string
+		input   []analyzer.Finding
+		wantLen int
+		wantMax int // count of the most merged finding
 	}{
 		{
 			name:    "empty input",

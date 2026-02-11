@@ -159,78 +159,26 @@ func (a *CommitHistoryAnalyzer) fetchContributors(ctx context.Context, owner, re
 	return contributors, nil
 }
 
+type commitStats struct {
+	recentBurstCount     int
+	suspiciousMessages   []string
+	newContributorCommit *githubCommit
+	largeCommits         []string
+}
+
 func (a *CommitHistoryAnalyzer) analyzeCommitPatterns(commits []githubCommit) []Finding {
+	if len(commits) == 0 {
+		return nil
+	}
+
+	stats := a.gatherCommitStats(commits)
 	var findings []Finding
 
-	if len(commits) == 0 {
-		return findings
-	}
-
-	// Track suspicious patterns
-	var (
-		recentBurstCount     int
-		suspiciousMessages   []string
-		newContributorCommit *githubCommit
-		largeCommits         []string
-	)
-
-	now := time.Now()
-	oneWeekAgo := now.AddDate(0, 0, -7)
-	oneHourAgo := now.Add(-time.Hour)
-
-	// Get the typical author
-	authorCounts := make(map[string]int)
-	for _, c := range commits {
-		if c.Author.Login != "" {
-			authorCounts[c.Author.Login]++
-		}
-	}
-
-	// Find the primary author
-	var primaryAuthor string
-	maxCount := 0
-	for author, count := range authorCounts {
-		if count > maxCount {
-			maxCount = count
-			primaryAuthor = author
-		}
-	}
-
-	// Analyze each commit
-	for i := range commits {
-		c := &commits[i]
-		commitTime := c.Commit.Author.Date
-
-		// Check for recent burst of activity
-		if commitTime.After(oneHourAgo) {
-			recentBurstCount++
-		}
-
-		// Check for suspicious commit messages
-		msgLower := strings.ToLower(c.Commit.Message)
-		if isSuspiciousCommitMessage(msgLower) {
-			suspiciousMessages = append(suspiciousMessages, c.Commit.Message)
-		}
-
-		// Check for new contributor making changes
-		if c.Author.Login != "" && c.Author.Login != primaryAuthor {
-			if authorCounts[c.Author.Login] == 1 && commitTime.After(oneWeekAgo) {
-				newContributorCommit = c
-			}
-		}
-
-		// Check for unusually large changes (if stats available)
-		if c.Stats.Additions > 1000 || c.Stats.Deletions > 500 {
-			largeCommits = append(largeCommits, c.SHA[:7])
-		}
-	}
-
-	// Report burst of recent activity
-	if recentBurstCount > 5 {
+	if stats.recentBurstCount > 5 {
 		findings = append(findings, Finding{
 			Analyzer:    a.Name(),
 			Title:       "Burst of recent commits",
-			Description: fmt.Sprintf("%d commits in the last hour - unusual activity pattern", recentBurstCount),
+			Description: fmt.Sprintf("%d commits in the last hour - unusual activity pattern", stats.recentBurstCount),
 			Severity:    SeverityMedium,
 			ExploitExample: "Rapid commits before a release can indicate:\n" +
 				"    - Last-minute malicious code injection\n" +
@@ -240,12 +188,11 @@ func (a *CommitHistoryAnalyzer) analyzeCommitPatterns(commits []githubCommit) []
 		})
 	}
 
-	// Report suspicious commit messages
-	if len(suspiciousMessages) > 0 {
+	if len(stats.suspiciousMessages) > 0 {
 		findings = append(findings, Finding{
 			Analyzer:    a.Name(),
 			Title:       "Suspicious commit messages",
-			Description: fmt.Sprintf("Found %d commits with suspicious messages: %s", len(suspiciousMessages), strings.Join(suspiciousMessages[:minInt(3, len(suspiciousMessages))], "; ")),
+			Description: fmt.Sprintf("Found %d commits with suspicious messages: %s", len(stats.suspiciousMessages), strings.Join(stats.suspiciousMessages[:minInt(3, len(stats.suspiciousMessages))], "; ")),
 			Severity:    SeverityMedium,
 			ExploitExample: "Attackers sometimes leave obvious traces:\n" +
 				"    - 'test' or 'fix' for malicious changes\n" +
@@ -255,12 +202,11 @@ func (a *CommitHistoryAnalyzer) analyzeCommitPatterns(commits []githubCommit) []
 		})
 	}
 
-	// Report new contributor
-	if newContributorCommit != nil {
+	if stats.newContributorCommit != nil {
 		findings = append(findings, Finding{
 			Analyzer:    a.Name(),
 			Title:       "Recent commit from new contributor",
-			Description: fmt.Sprintf("User %q made their first commit recently (%s)", newContributorCommit.Author.Login, newContributorCommit.Commit.Author.Date.Format("2006-01-02")),
+			Description: fmt.Sprintf("User %q made their first commit recently (%s)", stats.newContributorCommit.Author.Login, stats.newContributorCommit.Commit.Author.Date.Format("2006-01-02")),
 			Severity:    SeverityMedium,
 			ExploitExample: "New contributor pattern seen in event-stream attack:\n" +
 				"    1. Attacker offers to 'help maintain' dormant package\n" +
@@ -270,12 +216,11 @@ func (a *CommitHistoryAnalyzer) analyzeCommitPatterns(commits []githubCommit) []
 		})
 	}
 
-	// Report large changes
-	if len(largeCommits) > 0 {
+	if len(stats.largeCommits) > 0 {
 		findings = append(findings, Finding{
 			Analyzer:    a.Name(),
 			Title:       "Unusually large code changes",
-			Description: fmt.Sprintf("Commits with large diffs: %s", strings.Join(largeCommits, ", ")),
+			Description: fmt.Sprintf("Commits with large diffs: %s", strings.Join(stats.largeCommits, ", ")),
 			Severity:    SeverityLow,
 			ExploitExample: "Large commits can hide malicious code:\n" +
 				"    - Attacker buries payload in thousands of lines\n" +
@@ -286,6 +231,54 @@ func (a *CommitHistoryAnalyzer) analyzeCommitPatterns(commits []githubCommit) []
 	}
 
 	return findings
+}
+
+func (a *CommitHistoryAnalyzer) gatherCommitStats(commits []githubCommit) commitStats {
+	var stats commitStats
+	now := time.Now()
+	oneWeekAgo := now.AddDate(0, 0, -7)
+	oneHourAgo := now.Add(-time.Hour)
+
+	authorCounts := make(map[string]int)
+	for _, c := range commits {
+		if c.Author.Login != "" {
+			authorCounts[c.Author.Login]++
+		}
+	}
+
+	primaryAuthor := findPrimaryAuthor(authorCounts)
+
+	for i := range commits {
+		c := &commits[i]
+		commitTime := c.Commit.Author.Date
+
+		if commitTime.After(oneHourAgo) {
+			stats.recentBurstCount++
+		}
+		if isSuspiciousCommitMessage(strings.ToLower(c.Commit.Message)) {
+			stats.suspiciousMessages = append(stats.suspiciousMessages, c.Commit.Message)
+		}
+		if c.Author.Login != "" && c.Author.Login != primaryAuthor &&
+			authorCounts[c.Author.Login] == 1 && commitTime.After(oneWeekAgo) {
+			stats.newContributorCommit = c
+		}
+		if c.Stats.Additions > 1000 || c.Stats.Deletions > 500 {
+			stats.largeCommits = append(stats.largeCommits, c.SHA[:7])
+		}
+	}
+	return stats
+}
+
+func findPrimaryAuthor(authorCounts map[string]int) string {
+	var primaryAuthor string
+	maxCount := 0
+	for author, count := range authorCounts {
+		if count > maxCount {
+			maxCount = count
+			primaryAuthor = author
+		}
+	}
+	return primaryAuthor
 }
 
 func (a *CommitHistoryAnalyzer) analyzeContributors(contributors []githubContributor) []Finding {

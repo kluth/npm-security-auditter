@@ -35,7 +35,7 @@ func TestSideEffectAnalyzer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			findings := analyzer.scanContent(tt.content, "index.js")
-			
+
 			if tt.expected == "" {
 				if len(findings) > 0 {
 					t.Errorf("expected 0 findings, got %d", len(findings))

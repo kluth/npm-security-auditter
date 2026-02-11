@@ -62,8 +62,8 @@ func TestProvenanceAnalyzer(t *testing.T) {
 			wantTitles:   []string{"No integrity hash"},
 		},
 		{
-			name:    "no repo link at all",
-			pkg:     &registry.PackageMetadata{},
+			name: "no repo link at all",
+			pkg:  &registry.PackageMetadata{},
 			version: &registry.PackageVersion{
 				Dist: registry.Dist{
 					Integrity:    "sha512-abc",

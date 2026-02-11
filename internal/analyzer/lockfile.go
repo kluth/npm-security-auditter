@@ -74,10 +74,10 @@ func (a *LockfileAnalyzer) scanLockfile(content []byte) []Finding {
 		// Check Protocol
 		if strings.HasPrefix(resolved, "http://") {
 			findings = append(findings, Finding{
-				Analyzer:    a.Name(),
-				Title:       "Insecure HTTP registry URL",
-				Description: fmt.Sprintf("Dependency %q uses an insecure HTTP URL: %s", name, resolved),
-				Severity:    SeverityMedium,
+				Analyzer:       a.Name(),
+				Title:          "Insecure HTTP registry URL",
+				Description:    fmt.Sprintf("Dependency %q uses an insecure HTTP URL: %s", name, resolved),
+				Severity:       SeverityMedium,
 				ExploitExample: fmt.Sprintf(`"resolved": "%s"`, resolved),
 				Remediation:    "Update the lockfile to use HTTPS to prevent Man-in-the-Middle attacks modifying code during install.",
 			})
@@ -91,14 +91,14 @@ func (a *LockfileAnalyzer) scanLockfile(content []byte) []Finding {
 				break
 			}
 		}
-		
+
 		// Allow relative paths (file:) or standard git protocols if they match expected patterns
 		if !isTrusted && strings.HasPrefix(resolved, "http") {
 			findings = append(findings, Finding{
-				Analyzer:    a.Name(),
-				Title:       "Suspicious lockfile registry URL",
-				Description: fmt.Sprintf("Dependency %q resolves to an untrusted domain: %s", name, resolved),
-				Severity:    SeverityCritical,
+				Analyzer:       a.Name(),
+				Title:          "Suspicious lockfile registry URL",
+				Description:    fmt.Sprintf("Dependency %q resolves to an untrusted domain: %s", name, resolved),
+				Severity:       SeverityCritical,
 				ExploitExample: fmt.Sprintf(`"resolved": "%s"`, resolved),
 				Remediation:    "Verify why this dependency is being fetched from a non-standard registry. This is a common supply chain attack vector.",
 			})
@@ -114,7 +114,9 @@ func (a *LockfileAnalyzer) scanLockfile(content []byte) []Finding {
 
 	// Scan 'packages' (npm v7+ lockfiles)
 	for name, data := range lockfile.Packages {
-		if name == "" { continue } // Root package
+		if name == "" {
+			continue
+		} // Root package
 		if depMap, ok := data.(map[string]interface{}); ok {
 			checkDep(name, depMap)
 		}

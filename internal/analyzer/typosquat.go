@@ -47,40 +47,40 @@ func (t *TyposquatAnalyzer) Analyze(_ context.Context, pkg *registry.PackageMeta
 			if dist == 1 {
 				sev = SeverityHigh
 			}
-			                        			findings = append(findings, Finding{
-			                        				Analyzer:    t.Name(),
-			                        				Title:       fmt.Sprintf("Suspiciously similar to popular package %q", popular),
-			                        				Description: fmt.Sprintf("Package name %q is very similar to the well-known package %q (difference: %d characters).", name, popular, dist),
-			                        				Severity:    sev,
-			                        				ExploitExample: fmt.Sprintf(
-			                        					"Typosquatting attack scenario:\n"+
-			                        						"    1. Attacker registers %q (similar to popular %q)\n"+
-			                        						"    2. Adds a postinstall script with credential-stealing payload\n"+
-			                        						"    3. Waits for developers to mistype: npm install %s\n"+
-			                        						"    4. Every typo = full code execution on the developer's machine\n"+
-			                        						"    Real-world: crossenv (typosquat of cross-env) stole npm tokens\n"+
-			                        						"    from thousands of developers before being caught.",
-			                        					name, popular, name),
-			                        				Remediation: fmt.Sprintf("Verify that you intended to install %q and not %q. If you intended the latter, uninstall this package immediately and check your system for unauthorized changes.", name, popular),
-			                        			})
-			                        		}
-			                        	}			
-			        // Check for common typosquatting patterns
-			        if pattern := detectTyposquatPattern(name); pattern != "" {
-			                findings = append(findings, Finding{
-			                        Analyzer:    t.Name(),
-			                        Title:       "Typosquatting pattern detected",
-			                        Description: pattern,
-			                        Severity:    SeverityHigh,
-			                        ExploitExample: "Name-variant typosquatting is a common supply chain attack vector:\n" +
-			                                "    - Attacker publishes a package with an extra hyphen, suffix, or prefix\n" +
-			                                "    - Auto-complete, copy-paste errors, or SEO tricks lead victims to install it\n" +
-			                                "    - Package contains identical functionality PLUS a hidden malicious payload\n" +
-			                                "    - The lodash-utils incident and event-stream attack both used this pattern",
-			                        Remediation: "Carefully verify the package name. This variant pattern is highly suspicious and often used to deceive users into installing malicious clones of popular libraries.",
-			                })
-			        }
-				return findings, nil
+			findings = append(findings, Finding{
+				Analyzer:    t.Name(),
+				Title:       fmt.Sprintf("Suspiciously similar to popular package %q", popular),
+				Description: fmt.Sprintf("Package name %q is very similar to the well-known package %q (difference: %d characters).", name, popular, dist),
+				Severity:    sev,
+				ExploitExample: fmt.Sprintf(
+					"Typosquatting attack scenario:\n"+
+						"    1. Attacker registers %q (similar to popular %q)\n"+
+						"    2. Adds a postinstall script with credential-stealing payload\n"+
+						"    3. Waits for developers to mistype: npm install %s\n"+
+						"    4. Every typo = full code execution on the developer's machine\n"+
+						"    Real-world: crossenv (typosquat of cross-env) stole npm tokens\n"+
+						"    from thousands of developers before being caught.",
+					name, popular, name),
+				Remediation: fmt.Sprintf("Verify that you intended to install %q and not %q. If you intended the latter, uninstall this package immediately and check your system for unauthorized changes.", name, popular),
+			})
+		}
+	}
+	// Check for common typosquatting patterns
+	if pattern := detectTyposquatPattern(name); pattern != "" {
+		findings = append(findings, Finding{
+			Analyzer:    t.Name(),
+			Title:       "Typosquatting pattern detected",
+			Description: pattern,
+			Severity:    SeverityHigh,
+			ExploitExample: "Name-variant typosquatting is a common supply chain attack vector:\n" +
+				"    - Attacker publishes a package with an extra hyphen, suffix, or prefix\n" +
+				"    - Auto-complete, copy-paste errors, or SEO tricks lead victims to install it\n" +
+				"    - Package contains identical functionality PLUS a hidden malicious payload\n" +
+				"    - The lodash-utils incident and event-stream attack both used this pattern",
+			Remediation: "Carefully verify the package name. This variant pattern is highly suspicious and often used to deceive users into installing malicious clones of popular libraries.",
+		})
+	}
+	return findings, nil
 }
 
 func normalizeName(name string) string {

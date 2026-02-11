@@ -74,7 +74,7 @@ func TestLockfileAnalyzer(t *testing.T) {
 			// We'll need to mock the file reading part or just pass the map to a helper method in the analyzer
 			// For TDD, let's expose a scanLockfile method that takes bytes
 			findings := analyzer.scanLockfile([]byte(tt.contents["package-lock.json"]))
-			
+
 			if tt.expected == "" {
 				if len(findings) > 0 {
 					t.Errorf("expected 0 findings, got %d", len(findings))

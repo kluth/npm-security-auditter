@@ -33,9 +33,9 @@ var (
 	containerDetectionPattern = regexp.MustCompile(`(?i)(?:\.dockerenv|/proc/1/cgroup|/proc/self/cgroup|DOCKER_HOST|KUBERNETES_SERVICE_HOST)`)
 
 	// Multi-signal OS fingerprinting (3+ signals together)
-	osHostnamePattern    = regexp.MustCompile(`(?i)os\.hostname\(\)`)
-	osUserInfoPattern    = regexp.MustCompile(`(?i)os\.userInfo\(\)`)
-	osNetworkPattern     = regexp.MustCompile(`(?i)os\.networkInterfaces\(\)`)
+	osHostnamePattern     = regexp.MustCompile(`(?i)os\.hostname\(\)`)
+	osUserInfoPattern     = regexp.MustCompile(`(?i)os\.userInfo\(\)`)
+	osNetworkPattern      = regexp.MustCompile(`(?i)os\.networkInterfaces\(\)`)
 	osPlatformArchPattern = regexp.MustCompile(`(?i)os\.(?:platform|arch)\(\)`)
 )
 

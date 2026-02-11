@@ -2,14 +2,14 @@ package sandbox
 
 // HarnessOutput is the JSON schema emitted by the Node.js harness script.
 type HarnessOutput struct {
-	Success        bool              `json:"success"`
-	Error          string            `json:"error,omitempty"`
-	HarnessVersion string            `json:"harnessVersion,omitempty"`
-	LoadPhase      PhaseResult       `json:"loadPhase"`
-	InstallPhase   PhaseResult       `json:"installPhase"`
-	Intercepted    InterceptedCalls  `json:"intercepted"`
-	Environment    EnvironmentInfo   `json:"environment"`
-	PatchErrors    []PatchError      `json:"patchErrors,omitempty"`
+	Success        bool             `json:"success"`
+	Error          string           `json:"error,omitempty"`
+	HarnessVersion string           `json:"harnessVersion,omitempty"`
+	LoadPhase      PhaseResult      `json:"loadPhase"`
+	InstallPhase   PhaseResult      `json:"installPhase"`
+	Intercepted    InterceptedCalls `json:"intercepted"`
+	Environment    EnvironmentInfo  `json:"environment"`
+	PatchErrors    []PatchError     `json:"patchErrors,omitempty"`
 }
 
 // PhaseResult reports the outcome of a phase (install, load).

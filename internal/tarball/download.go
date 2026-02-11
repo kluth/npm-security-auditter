@@ -60,7 +60,6 @@ func Download(ctx context.Context, tarballURL, expectedShasum string) (*Extracte
 		return nil, fmt.Errorf("tarball download returned status %d", resp.StatusCode)
 	}
 
-	// Tee the response body through a SHA-1 hasher.
 	hasher := sha1.New()
 	limitedBody := io.LimitReader(resp.Body, maxTotalSize+1)
 	reader := io.TeeReader(limitedBody, hasher)
@@ -71,13 +70,30 @@ func Download(ctx context.Context, tarballURL, expectedShasum string) (*Extracte
 	}
 	defer gz.Close()
 
+	ep, err := extractTar(gz)
+	if err != nil {
+		return nil, err
+	}
+
+	// Drain any remaining data so the hasher sees everything.
+	io.Copy(io.Discard, reader)
+
+	actualShasum := hex.EncodeToString(hasher.Sum(nil))
+	if expectedShasum != "" && actualShasum != expectedShasum {
+		ep.Cleanup()
+		return nil, &ShasumMismatchError{Expected: expectedShasum, Actual: actualShasum}
+	}
+
+	return ep, nil
+}
+
+func extractTar(gz io.Reader) (*ExtractedPackage, error) {
 	tmpDir, err := os.MkdirTemp("", "auditter-tarball-*")
 	if err != nil {
 		return nil, fmt.Errorf("creating temp dir: %w", err)
 	}
 
 	ep := &ExtractedPackage{Dir: tmpDir}
-
 	tr := tar.NewReader(gz)
 	var totalSize int64
 	fileCount := 0
@@ -92,92 +108,80 @@ func Download(ctx context.Context, tarballURL, expectedShasum string) (*Extracte
 			return nil, fmt.Errorf("reading tar: %w", err)
 		}
 
-		// Only process regular files.
 		if header.Typeflag != tar.TypeReg {
 			continue
 		}
 
 		fileCount++
-		if fileCount > maxFiles {
+		if err := validateLimits(fileCount, header.Size, totalSize); err != nil {
 			ep.Cleanup()
-			return nil, fmt.Errorf("tarball exceeds maximum file count (%d)", maxFiles)
+			return nil, err
 		}
-
-		if header.Size > maxFileSize {
-			ep.Cleanup()
-			return nil, fmt.Errorf("file %q exceeds maximum size (%d bytes)", header.Name, maxFileSize)
-		}
-
 		totalSize += header.Size
-		if totalSize > maxTotalSize {
-			ep.Cleanup()
-			return nil, fmt.Errorf("tarball exceeds maximum total size (%d bytes)", maxTotalSize)
-		}
 
-		// Sanitize the path: strip the leading "package/" prefix that npm
-		// tarballs use, and reject any traversal attempts.
 		cleanName := sanitizePath(header.Name)
 		if cleanName == "" {
 			continue
 		}
 
-		destPath := filepath.Join(tmpDir, cleanName)
-
-		// Ensure destination is within tmpDir (path traversal guard).
-		if !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(tmpDir)+string(os.PathSeparator)) {
+		if err := extractFile(ep, tr, tmpDir, cleanName); err != nil {
 			ep.Cleanup()
-			return nil, fmt.Errorf("path traversal detected: %q", header.Name)
-		}
-
-		// Create parent directories.
-		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
-			ep.Cleanup()
-			return nil, fmt.Errorf("creating directory for %q: %w", cleanName, err)
-		}
-
-		f, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-		if err != nil {
-			ep.Cleanup()
-			return nil, fmt.Errorf("creating file %q: %w", cleanName, err)
-		}
-
-		written, err := io.Copy(f, io.LimitReader(tr, maxFileSize))
-		f.Close()
-		if err != nil {
-			ep.Cleanup()
-			return nil, fmt.Errorf("writing file %q: %w", cleanName, err)
-		}
-
-		isJS := isJSFile(cleanName)
-		ep.Files = append(ep.Files, FileEntry{
-			Path: cleanName,
-			Size: written,
-			IsJS: isJS,
-		})
-
-		// Capture package.json from the root of the package.
-		if cleanName == "package.json" {
-			data, err := os.ReadFile(destPath)
-			if err == nil {
-				ep.PackageJSON = data
-			}
-		}
-	}
-
-	// Drain any remaining data so the hasher sees everything.
-	io.Copy(io.Discard, reader)
-
-	// Verify shasum.
-	actualShasum := hex.EncodeToString(hasher.Sum(nil))
-	if expectedShasum != "" && actualShasum != expectedShasum {
-		ep.Cleanup()
-		return nil, &ShasumMismatchError{
-			Expected: expectedShasum,
-			Actual:   actualShasum,
+			return nil, err
 		}
 	}
 
 	return ep, nil
+}
+
+func validateLimits(fileCount int, fileSize, totalSize int64) error {
+	if fileCount > maxFiles {
+		return fmt.Errorf("tarball exceeds maximum file count (%d)", maxFiles)
+	}
+	if fileSize > maxFileSize {
+		return fmt.Errorf("file exceeds maximum size (%d bytes)", maxFileSize)
+	}
+	if totalSize+fileSize > maxTotalSize {
+		return fmt.Errorf("tarball exceeds maximum total size (%d bytes)", maxTotalSize)
+	}
+	return nil
+}
+
+func extractFile(ep *ExtractedPackage, tr *tar.Reader, tmpDir, cleanName string) error {
+	destPath := filepath.Join(tmpDir, cleanName)
+
+	if !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(tmpDir)+string(os.PathSeparator)) {
+		return fmt.Errorf("path traversal detected: %q", cleanName)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return fmt.Errorf("creating directory for %q: %w", cleanName, err)
+	}
+
+	f, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("creating file %q: %w", cleanName, err)
+	}
+
+	written, err := io.Copy(f, io.LimitReader(tr, maxFileSize))
+	f.Close()
+	if err != nil {
+		return fmt.Errorf("writing file %q: %w", cleanName, err)
+	}
+
+	ep.Files = append(ep.Files, FileEntry{
+		Path: cleanName,
+		Size: written,
+		IsJS: isJSFile(cleanName),
+	})
+
+	if cleanName == "package.json" {
+		data, err := os.ReadFile(destPath)
+		if err == nil {
+			ep.PackageJSON = data
+		}
+	}
+
+	return nil
 }
 
 // ShasumMismatchError is returned when the tarball shasum doesn't match.

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	DefaultRegistry    = "https://registry.npmjs.org"
+	DefaultRegistry     = "https://registry.npmjs.org"
 	DefaultDownloadsAPI = "https://api.npmjs.org"
 )
 

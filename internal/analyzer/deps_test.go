@@ -25,23 +25,23 @@ func TestDepsAnalyzer(t *testing.T) {
 			wantFindings: 0,
 		},
 		{
-			name: "wildcard version",
-			deps: map[string]string{"some-pkg": "*"},
+			name:         "wildcard version",
+			deps:         map[string]string{"some-pkg": "*"},
 			wantFindings: 1,
 		},
 		{
-			name: "latest version",
-			deps: map[string]string{"some-pkg": "latest"},
+			name:         "latest version",
+			deps:         map[string]string{"some-pkg": "latest"},
 			wantFindings: 1,
 		},
 		{
-			name: "internal-looking name",
-			deps: map[string]string{"internal-utils": "^1.0.0"},
+			name:         "internal-looking name",
+			deps:         map[string]string{"internal-utils": "^1.0.0"},
 			wantFindings: 1,
 		},
 		{
-			name: "open-ended range",
-			deps: map[string]string{"some-pkg": ">=1.0.0"},
+			name:         "open-ended range",
+			deps:         map[string]string{"some-pkg": ">=1.0.0"},
 			wantFindings: 1,
 		},
 	}

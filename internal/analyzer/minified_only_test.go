@@ -42,7 +42,7 @@ func TestMinifiedOnlyAnalyzer(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			
+
 			if tt.expected == "" {
 				if len(findings) > 0 {
 					t.Errorf("expected 0 findings, got %d", len(findings))

@@ -68,7 +68,7 @@ func TestScorecardAnalyzer(t *testing.T) {
 			pkg := &registry.PackageMetadata{
 				Repository: &registry.Repository{URL: "https://github.com/owner/repo"},
 			}
-			
+
 			findings, err := analyzer.Analyze(context.Background(), pkg, nil)
 			if err != nil {
 				if tt.status != 200 && len(findings) == 0 {

@@ -137,7 +137,7 @@ func TestNetworkIsolation(t *testing.T) {
 	// 8.8.8.8 is Google DNS, should be unreachable if network namespace is active
 	cmd := exec.CommandContext(ctx, "ping", "-c", "1", "-W", "1", "8.8.8.8")
 	applyPlatformIsolation(cmd)
-	
+
 	err := cmd.Run()
 	if err == nil {
 		t.Error("Network was reachable inside isolated sandbox! Network isolation failed.")
@@ -339,8 +339,8 @@ func TestRun_UnshareFail(t *testing.T) {
 
 	// 4. Run
 	r := NewRunner()
-	// Verify it picked up unshare (our fake one or the real one if something went wrong, 
-    // but NewRunner just checks existence)
+	// Verify it picked up unshare (our fake one or the real one if something went wrong,
+	// but NewRunner just checks existence)
 	if !r.UnshareAvailable() {
 		t.Fatal("expected unshare to be available (our fake one)")
 	}

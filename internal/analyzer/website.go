@@ -358,4 +358,3 @@ func wordSet(text string) map[string]bool {
 	}
 	return set
 }
-

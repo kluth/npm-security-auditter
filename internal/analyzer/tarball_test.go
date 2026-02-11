@@ -283,7 +283,7 @@ func TestTarballAnalyzer_Obfuscation_And_Entropy(t *testing.T) {
 
 func TestTarballAnalyzer_Crypto_And_Malware(t *testing.T) {
 	elfHeader := string([]byte{0x7f, 0x45, 0x4c, 0x46})
-	
+
 	files := map[string]string{
 		"package.json": `{"name":"test","version":"1.0.0"}`,
 		"wallet.js":    `const wallet = "0x71C7656EC7ab88b098defB751B7401B5f6d8976F";`,
@@ -457,9 +457,9 @@ func TestTarballAnalyzer_LargeNonJSFile(t *testing.T) {
 
 func TestTarballAnalyzer_SensitiveDirectory(t *testing.T) {
 	files := map[string]string{
-		"package.json":  `{"name":"test","version":"1.0.0"}`,
-		".ssh/id_rsa":   "private key",
-		".aws/creds":    "secret",
+		"package.json": `{"name":"test","version":"1.0.0"}`,
+		".ssh/id_rsa":  "private key",
+		".aws/creds":   "secret",
 	}
 	data, shasum := makeTarballData(t, files)
 
@@ -781,4 +781,3 @@ func TestTarballAnalyzer_EntropyAnalysis_SmallJSFile(t *testing.T) {
 		t.Error("small JS file should be skipped by entropyAnalysis")
 	}
 }
-

@@ -44,7 +44,7 @@ func TestEnvAnalyzer(t *testing.T) {
 			// For TDD, we assume Analyze will scan files in the version metadata or tarball
 			// Here we mock a version that has this content in a "virtual" file for testing
 			findings := analyzer.scanContent(tt.content, "index.js")
-			
+
 			if tt.expected == "" {
 				if len(findings) > 0 {
 					t.Errorf("expected 0 findings, got %d", len(findings))

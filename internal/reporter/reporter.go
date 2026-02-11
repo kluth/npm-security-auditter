@@ -62,6 +62,7 @@ type ProjectReport struct {
 	Reports     []Report `json:"reports"`
 	TotalScore  int      `json:"total_risk_score"`
 }
+
 // Reporter outputs audit results to a writer.
 type Reporter struct {
 	writer  io.Writer
@@ -160,7 +161,7 @@ func (r *Reporter) RenderProject(projectReport ProjectReport) error {
 
 func (r *Reporter) renderProjectPDF(projectReport ProjectReport) error {
 	pdf := fpdf.New("P", "mm", "A4", "")
-	
+
 	pdf.SetHeaderFunc(func() {
 		pdf.SetFont("Arial", "I", 8)
 		pdf.Cell(0, 10, r.T("project_audit", projectReport.ProjectName))
@@ -182,22 +183,45 @@ func (r *Reporter) renderProjectPDF(projectReport ProjectReport) error {
 // pdfPageLimit is the maximum number of pages for a single package report.
 const pdfPageLimit = 2
 
+// pdfColors holds reusable color constants for PDF rendering.
+type pdfColors struct {
+	red, gray, dark, green []int
+}
+
+var defaultPDFColors = pdfColors{
+	red:   []int{215, 58, 73},
+	gray:  []int{106, 115, 125},
+	dark:  []int{36, 41, 46},
+	green: []int{40, 167, 69},
+}
+
 func (r *Reporter) addReportToPDF(pdf *fpdf.Fpdf, report Report) {
 	pdf.AddPage()
 	startPage := pdf.PageNo()
+	c := defaultPDFColors
 
-	// Set primary colors
-	red := []int{215, 58, 73}
-	gray := []int{106, 115, 125}
-	dark := []int{36, 41, 46}
-	green := []int{40, 167, 69}
+	r.pdfHeader(pdf, report, c)
+	r.pdfRiskScore(pdf, report, c)
 
+	allFindings := collectFindings(report.Results)
+	if len(allFindings) == 0 {
+		pdf.SetFont("Arial", "I", 10)
+		pdf.SetTextColor(c.green[0], c.green[1], c.green[2])
+		pdf.Cell(0, 10, r.T("no_issues"))
+		return
+	}
+
+	mergedFindings := mergeSimilarFindings(allFindings)
+	r.pdfSeveritySummary(pdf, allFindings, mergedFindings, c)
+	r.pdfFindings(pdf, mergedFindings, startPage, c)
+}
+
+func (r *Reporter) pdfHeader(pdf *fpdf.Fpdf, report Report, c pdfColors) {
 	pdf.SetFont("Arial", "B", 18)
-	pdf.SetTextColor(dark[0], dark[1], dark[2])
+	pdf.SetTextColor(c.dark[0], c.dark[1], c.dark[2])
 	pdf.Cell(0, 12, r.T("title"))
 	pdf.Ln(12)
 
-	// Compact Summary Card
 	pdf.SetFillColor(246, 248, 250)
 	pdf.Rect(10, pdf.GetY(), 190, 28, "F")
 	pdf.SetFont("Arial", "B", 11)
@@ -211,161 +235,140 @@ func (r *Reporter) addReportToPDF(pdf *fpdf.Fpdf, report Report) {
 	pdf.Cell(95, 6, "  "+fmt.Sprintf("%s: %d %s", r.T("versions"), report.Info.TotalVersions, r.T("published")))
 	pdf.Cell(95, 6, fmt.Sprintf("%s: %d %s", r.T("dependencies"), report.Info.Dependencies, r.T("direct")))
 	pdf.Ln(10)
+}
 
-	// Risk Assessment - compact
+func (r *Reporter) pdfRiskScore(pdf *fpdf.Fpdf, report Report, c pdfColors) {
 	_, scoreLabel := r.GetRiskLevel(report.Score)
 	pdf.SetFont("Arial", "B", 11)
 	pdf.Cell(50, 6, r.T("risk_assessment")+":")
 	pdf.SetFont("Arial", "B", 12)
 	if report.Score >= 40 {
-		pdf.SetTextColor(red[0], red[1], red[2])
+		pdf.SetTextColor(c.red[0], c.red[1], c.red[2])
 	} else if report.Score >= 20 {
 		pdf.SetTextColor(227, 98, 9)
 	} else {
-		pdf.SetTextColor(green[0], green[1], green[2])
+		pdf.SetTextColor(c.green[0], c.green[1], c.green[2])
 	}
 	pdf.Cell(0, 6, fmt.Sprintf("%s (%d/100)", scoreLabel, report.Score))
-	pdf.SetTextColor(dark[0], dark[1], dark[2])
+	pdf.SetTextColor(c.dark[0], c.dark[1], c.dark[2])
 	pdf.Ln(10)
+}
 
-	allFindings := collectFindings(report.Results)
-	if len(allFindings) == 0 {
-		pdf.SetFont("Arial", "I", 10)
-		pdf.SetTextColor(green[0], green[1], green[2])
-		pdf.Cell(0, 10, r.T("no_issues"))
-		return
-	}
-
-	// Merge similar findings for concise display
-	mergedFindings := mergeSimilarFindings(allFindings)
+func (r *Reporter) pdfSeveritySummary(pdf *fpdf.Fpdf, allFindings []analyzer.Finding, mergedFindings []MergedFinding, c pdfColors) {
+	severityCounts := countSeverities(allFindings)
 	totalOriginal := len(allFindings)
 	totalMerged := len(mergedFindings)
 
-	// Severity summary line
-	severityCounts := map[analyzer.Severity]int{}
-	for _, f := range allFindings {
-		severityCounts[f.Severity]++
-	}
 	pdf.SetFont("Arial", "B", 10)
 	pdf.Cell(0, 6, r.T("findings_summary")+fmt.Sprintf(" (%d %s", totalOriginal, r.T("findings_word")))
 	if totalMerged < totalOriginal {
 		pdf.SetFont("Arial", "", 10)
-		pdf.SetTextColor(gray[0], gray[1], gray[2])
+		pdf.SetTextColor(c.gray[0], c.gray[1], c.gray[2])
 		pdf.Write(6, fmt.Sprintf(", %d %s", totalMerged, r.T("unique_issues")))
 	}
 	pdf.Write(6, ")")
 	pdf.Ln(6)
 
-	// Compact severity counts
 	pdf.SetFont("Arial", "", 9)
 	summaryParts := []string{}
-	if c := severityCounts[analyzer.SeverityCritical]; c > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d CRITICAL", c))
+	if n := severityCounts[analyzer.SeverityCritical]; n > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%d CRITICAL", n))
 	}
-	if c := severityCounts[analyzer.SeverityHigh]; c > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d HIGH", c))
+	if n := severityCounts[analyzer.SeverityHigh]; n > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%d HIGH", n))
 	}
-	if c := severityCounts[analyzer.SeverityMedium]; c > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d MEDIUM", c))
+	if n := severityCounts[analyzer.SeverityMedium]; n > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%d MEDIUM", n))
 	}
-	if c := severityCounts[analyzer.SeverityLow]; c > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d LOW", c))
+	if n := severityCounts[analyzer.SeverityLow]; n > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%d LOW", n))
 	}
-	pdf.SetTextColor(gray[0], gray[1], gray[2])
+	pdf.SetTextColor(c.gray[0], c.gray[1], c.gray[2])
 	pdf.Cell(0, 5, strings.Join(summaryParts, " | "))
-	pdf.SetTextColor(dark[0], dark[1], dark[2])
+	pdf.SetTextColor(c.dark[0], c.dark[1], c.dark[2])
 	pdf.Ln(8)
+}
 
-	// Draw findings with page limit awareness
+func (r *Reporter) pdfFindings(pdf *fpdf.Fpdf, mergedFindings []MergedFinding, startPage int, c pdfColors) {
 	displayedCount := 0
-	truncated := false
 
 	for _, mf := range mergedFindings {
-		// Check if we're approaching page limit (leave room for truncation notice)
 		currentPage := pdf.PageNo()
 		if currentPage-startPage >= pdfPageLimit {
-			truncated = true
 			break
 		}
-
-		// Also check Y position - if near bottom of 2nd page, stop
 		if currentPage-startPage == pdfPageLimit-1 && pdf.GetY() > 240 {
-			truncated = true
 			break
 		}
 
 		displayedCount++
-
-		// Compact finding display
-		pdf.SetFont("Arial", "B", 10)
-		if mf.Severity >= analyzer.SeverityHigh {
-			pdf.SetTextColor(red[0], red[1], red[2])
-		} else if mf.Severity >= analyzer.SeverityMedium {
-			pdf.SetTextColor(227, 98, 9)
-		} else {
-			pdf.SetTextColor(gray[0], gray[1], gray[2])
-		}
-
-		titleText := fmt.Sprintf("[%s] %s", mf.Severity, r.T(mf.Title))
-		if mf.Count > 1 {
-			titleText += fmt.Sprintf(" (x%d)", mf.Count)
-		}
-		pdf.Cell(0, 6, titleText)
-		pdf.Ln(5)
-
-		// Analyzer source
-		pdf.SetFont("Arial", "I", 8)
-		pdf.SetTextColor(gray[0], gray[1], gray[2])
-		pdf.Cell(0, 4, r.T("analyzer_label", mf.Analyzer))
-		pdf.Ln(4)
-
-		// Description - truncate if too long
-		pdf.SetTextColor(dark[0], dark[1], dark[2])
-		pdf.SetFont("Arial", "", 9)
-		desc := r.T(mf.Description)
-		if len(desc) > 200 {
-			desc = desc[:197] + "..."
-		}
-		pdf.MultiCell(0, 4, desc, "", "", false)
-
-		// Show instance count if merged
-		if mf.Count > 1 && len(mf.Instances) > 0 {
-			pdf.SetFont("Arial", "I", 8)
-			pdf.SetTextColor(gray[0], gray[1], gray[2])
-			instanceText := fmt.Sprintf("+ %d %s", mf.Count-1, r.T("similar_instances"))
-			pdf.Cell(0, 4, instanceText)
-			pdf.Ln(4)
-		}
-
-		// Remediation - compact, one line if possible
-		if mf.Remediation != "" {
-			pdf.SetFont("Arial", "B", 8)
-			pdf.SetTextColor(green[0], green[1], green[2])
-			pdf.Cell(15, 4, r.T("remediation")+":")
-			pdf.SetFont("Arial", "", 8)
-			remediation := r.T(mf.Remediation)
-			if len(remediation) > 120 {
-				remediation = remediation[:117] + "..."
-			}
-			pdf.MultiCell(0, 4, remediation, "", "", false)
-		}
-
-		pdf.Ln(3)
-		pdf.SetDrawColor(234, 236, 239)
-		pdf.Line(10, pdf.GetY(), 200, pdf.GetY())
-		pdf.Ln(3)
+		r.pdfRenderFinding(pdf, mf, c)
 	}
 
-	// Truncation notice if we hit page limit
-	if truncated {
-		remaining := totalMerged - displayedCount
+	if displayedCount < len(mergedFindings) {
+		remaining := len(mergedFindings) - displayedCount
 		pdf.SetFont("Arial", "I", 9)
-		pdf.SetTextColor(gray[0], gray[1], gray[2])
+		pdf.SetTextColor(c.gray[0], c.gray[1], c.gray[2])
 		pdf.Cell(0, 6, fmt.Sprintf("... %s %d %s", r.T("and"), remaining, r.T("more_issues_truncated")))
 		pdf.Ln(6)
 		pdf.SetFont("Arial", "", 8)
 		pdf.Cell(0, 4, r.T("run_terminal_for_full"))
 	}
+}
+
+func (r *Reporter) pdfRenderFinding(pdf *fpdf.Fpdf, mf MergedFinding, c pdfColors) {
+	pdf.SetFont("Arial", "B", 10)
+	if mf.Severity >= analyzer.SeverityHigh {
+		pdf.SetTextColor(c.red[0], c.red[1], c.red[2])
+	} else if mf.Severity >= analyzer.SeverityMedium {
+		pdf.SetTextColor(227, 98, 9)
+	} else {
+		pdf.SetTextColor(c.gray[0], c.gray[1], c.gray[2])
+	}
+
+	titleText := fmt.Sprintf("[%s] %s", mf.Severity, r.T(mf.Title))
+	if mf.Count > 1 {
+		titleText += fmt.Sprintf(" (x%d)", mf.Count)
+	}
+	pdf.Cell(0, 6, titleText)
+	pdf.Ln(5)
+
+	pdf.SetFont("Arial", "I", 8)
+	pdf.SetTextColor(c.gray[0], c.gray[1], c.gray[2])
+	pdf.Cell(0, 4, r.T("analyzer_label", mf.Analyzer))
+	pdf.Ln(4)
+
+	pdf.SetTextColor(c.dark[0], c.dark[1], c.dark[2])
+	pdf.SetFont("Arial", "", 9)
+	desc := r.T(mf.Description)
+	if len(desc) > 200 {
+		desc = desc[:197] + "..."
+	}
+	pdf.MultiCell(0, 4, desc, "", "", false)
+
+	if mf.Count > 1 && len(mf.Instances) > 0 {
+		pdf.SetFont("Arial", "I", 8)
+		pdf.SetTextColor(c.gray[0], c.gray[1], c.gray[2])
+		pdf.Cell(0, 4, fmt.Sprintf("+ %d %s", mf.Count-1, r.T("similar_instances")))
+		pdf.Ln(4)
+	}
+
+	if mf.Remediation != "" {
+		pdf.SetFont("Arial", "B", 8)
+		pdf.SetTextColor(c.green[0], c.green[1], c.green[2])
+		pdf.Cell(15, 4, r.T("remediation")+":")
+		pdf.SetFont("Arial", "", 8)
+		remediation := r.T(mf.Remediation)
+		if len(remediation) > 120 {
+			remediation = remediation[:117] + "..."
+		}
+		pdf.MultiCell(0, 4, remediation, "", "", false)
+	}
+
+	pdf.Ln(3)
+	pdf.SetDrawColor(234, 236, 239)
+	pdf.Line(10, pdf.GetY(), 200, pdf.GetY())
+	pdf.Ln(3)
 }
 
 // JSONReport extends Report with merged findings for JSON output.
@@ -393,22 +396,52 @@ func (r *Reporter) renderJSON(report Report) error {
 func (r *Reporter) renderTerminal(report Report) error {
 	w := r.writer
 
-	// ── Title Box ──
 	r.printLogo(w)
 	fmt.Fprintln(w)
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// SECTION 1: EXECUTIVE SUMMARY (Quick Decision)
-	// ═══════════════════════════════════════════════════════════════════════
 	allFindings := collectFindings(report.Results)
-	severityCounts := map[analyzer.Severity]int{}
-	for _, f := range allFindings {
-		severityCounts[f.Severity]++
+	severityCounts := countSeverities(allFindings)
+	scoreColor, scoreLabel := r.GetRiskLevel(report.Score)
+
+	r.renderExecutiveSummary(w, report, scoreColor, scoreLabel, severityCounts)
+	r.renderStatsLine(w, allFindings, severityCounts)
+	r.renderTerminalActionChecklist(w, report, allFindings)
+	r.renderTerminalPackageInfo(w, report, scoreColor)
+	r.renderTerminalErrors(w, report.Results)
+
+	if len(allFindings) == 0 {
+		r.printBox(w, " "+r.T("no_issues"), colorGreen)
+		fmt.Fprintln(w)
+		r.renderTerminalFooter(w, report.AuditedAt)
+		return nil
 	}
 
-	scoreColor, scoreLabel := r.GetRiskLevel(report.Score)
-	verdict := r.getVerdict(report.Score, severityCounts)
+	sort.Slice(allFindings, func(i, j int) bool {
+		return allFindings[i].Severity > allFindings[j].Severity
+	})
 
+	mergedFindings := mergeSimilarFindings(allFindings)
+	r.renderFindingsByAction(w, allFindings, mergedFindings)
+	r.renderTerminalDetailedFindings(w, allFindings, mergedFindings)
+	r.renderQuickReference(w, report)
+	r.printSectionHeader(w, r.T("analyzer_breakdown"))
+	r.printAnalyzerBreakdown(w, report.Results)
+	fmt.Fprintln(w)
+	r.renderTerminalFooter(w, report.AuditedAt)
+
+	return nil
+}
+
+func countSeverities(findings []analyzer.Finding) map[analyzer.Severity]int {
+	counts := map[analyzer.Severity]int{}
+	for _, f := range findings {
+		counts[f.Severity]++
+	}
+	return counts
+}
+
+func (r *Reporter) renderExecutiveSummary(w io.Writer, report Report, scoreColor, scoreLabel string, severityCounts map[analyzer.Severity]int) {
+	verdict := r.getVerdict(report.Score, severityCounts)
 	fmt.Fprintf(w, "%s%s╔══════════════════════════════════════════════════════════════════════╗%s\n", colorBold, scoreColor, colorReset)
 	fmt.Fprintf(w, "%s%s║  %s%-66s  %s║%s\n", colorBold, scoreColor, colorBold, r.T("executive_summary"), scoreColor, colorReset)
 	fmt.Fprintf(w, "%s%s╠══════════════════════════════════════════════════════════════════════╣%s\n", colorBold, scoreColor, colorReset)
@@ -418,44 +451,45 @@ func (r *Reporter) renderTerminal(report Report) error {
 	fmt.Fprintf(w, "%s%s║%s  %s%-66s%s  %s║%s\n", colorBold, scoreColor, colorBold, scoreColor, verdict, colorReset, scoreColor, colorReset)
 	fmt.Fprintf(w, "%s%s╚══════════════════════════════════════════════════════════════════════╝%s\n", colorBold, scoreColor, colorReset)
 	fmt.Fprintln(w)
+}
 
-	// Quick stats line
-	if len(allFindings) > 0 {
-		stats := []string{}
-		if c := severityCounts[analyzer.SeverityCritical]; c > 0 {
-			stats = append(stats, fmt.Sprintf("%s%d CRITICAL%s", colorRed, c, colorReset))
-		}
-		if c := severityCounts[analyzer.SeverityHigh]; c > 0 {
-			stats = append(stats, fmt.Sprintf("%s%d HIGH%s", colorRed, c, colorReset))
-		}
-		if c := severityCounts[analyzer.SeverityMedium]; c > 0 {
-			stats = append(stats, fmt.Sprintf("%s%d MEDIUM%s", colorYellow, c, colorReset))
-		}
-		if c := severityCounts[analyzer.SeverityLow]; c > 0 {
-			stats = append(stats, fmt.Sprintf("%s%d LOW%s", colorDim, c, colorReset))
-		}
-		fmt.Fprintf(w, "  %s: %s\n\n", r.T("findings_detected"), strings.Join(stats, " · "))
+func (r *Reporter) renderStatsLine(w io.Writer, allFindings []analyzer.Finding, severityCounts map[analyzer.Severity]int) {
+	if len(allFindings) == 0 {
+		return
 	}
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// SECTION 2: ACTION CHECKLIST (What to do)
-	// ═══════════════════════════════════════════════════════════════════════
-	if len(allFindings) > 0 {
-		r.printSectionHeader(w, r.T("action_checklist"))
-		actions := r.generateActionChecklist(report.Score, allFindings, report.Info.HasScripts)
-		for i, action := range actions {
-			icon := "□"
-			if action.critical {
-				icon = fmt.Sprintf("%s⚠%s", colorRed, colorReset)
-			}
-			fmt.Fprintf(w, "  %s %s%d.%s %s\n", icon, colorBold, i+1, colorReset, action.text)
-		}
-		fmt.Fprintln(w)
+	stats := []string{}
+	if c := severityCounts[analyzer.SeverityCritical]; c > 0 {
+		stats = append(stats, fmt.Sprintf("%s%d CRITICAL%s", colorRed, c, colorReset))
 	}
+	if c := severityCounts[analyzer.SeverityHigh]; c > 0 {
+		stats = append(stats, fmt.Sprintf("%s%d HIGH%s", colorRed, c, colorReset))
+	}
+	if c := severityCounts[analyzer.SeverityMedium]; c > 0 {
+		stats = append(stats, fmt.Sprintf("%s%d MEDIUM%s", colorYellow, c, colorReset))
+	}
+	if c := severityCounts[analyzer.SeverityLow]; c > 0 {
+		stats = append(stats, fmt.Sprintf("%s%d LOW%s", colorDim, c, colorReset))
+	}
+	fmt.Fprintf(w, "  %s: %s\n\n", r.T("findings_detected"), strings.Join(stats, " · "))
+}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// SECTION 3: PACKAGE INFO (Context)
-	// ═══════════════════════════════════════════════════════════════════════
+func (r *Reporter) renderTerminalActionChecklist(w io.Writer, report Report, allFindings []analyzer.Finding) {
+	if len(allFindings) == 0 {
+		return
+	}
+	r.printSectionHeader(w, r.T("action_checklist"))
+	actions := r.generateActionChecklist(report.Score, allFindings, report.Info.HasScripts)
+	for i, action := range actions {
+		icon := "□"
+		if action.critical {
+			icon = fmt.Sprintf("%s⚠%s", colorRed, colorReset)
+		}
+		fmt.Fprintf(w, "  %s %s%d.%s %s\n", icon, colorBold, i+1, colorReset, action.text)
+	}
+	fmt.Fprintln(w)
+}
+
+func (r *Reporter) renderTerminalPackageInfo(w io.Writer, report Report, scoreColor string) {
 	r.printSectionHeader(w, r.T("pkg_info"))
 	r.printField(w, r.T("package"), report.Package+"@"+report.Version)
 	if report.Info.License != "" {
@@ -476,38 +510,43 @@ func (r *Reporter) renderTerminal(report Report) error {
 	}
 	r.printField(w, r.T("versions"), fmt.Sprintf("%d %s", report.Info.TotalVersions, r.T("published")))
 	r.printField(w, r.T("dependencies"), fmt.Sprintf("%d %s", report.Info.Dependencies, r.T("direct")))
-	if report.Info.HasScripts {
+	r.renderTerminalScripts(w, report.Info)
+	r.renderTerminalReputation(w, report.Info)
+	fmt.Fprintln(w)
+
+	r.printSectionHeader(w, r.T("risk_assessment"))
+	r.printRiskBar(w, report.Score, scoreColor)
+	fmt.Fprintln(w)
+}
+
+func (r *Reporter) renderTerminalScripts(w io.Writer, info PackageInfo) {
+	if info.HasScripts {
 		r.printField(w, r.T("install_scripts"), fmt.Sprintf("%s%s%s", colorRed, r.T("scripts_yes"), colorReset))
 	} else {
 		r.printField(w, r.T("install_scripts"), fmt.Sprintf("%s%s%s", colorGreen, r.T("scripts_none"), colorReset))
 	}
-	// Display reputation info if available
-	if report.Info.WeeklyDownloads > 0 {
-		dlStr := formatDownloads(report.Info.WeeklyDownloads)
+}
+
+func (r *Reporter) renderTerminalReputation(w io.Writer, info PackageInfo) {
+	if info.WeeklyDownloads > 0 {
+		dlStr := formatDownloads(info.WeeklyDownloads)
 		tierColor := colorDim
-		switch report.Info.DownloadTier {
-		case "massive":
-			tierColor = colorGreen
-		case "popular":
+		switch info.DownloadTier {
+		case "massive", "popular":
 			tierColor = colorGreen
 		case "moderate":
 			tierColor = colorCyan
 		}
-		r.printField(w, r.T("weekly_downloads"), fmt.Sprintf("%s%s/week (%s)%s", tierColor, dlStr, report.Info.DownloadTier, colorReset))
+		r.printField(w, r.T("weekly_downloads"), fmt.Sprintf("%s%s/week (%s)%s", tierColor, dlStr, info.DownloadTier, colorReset))
 	}
-	if report.Info.IsTrustedScope {
-		r.printField(w, r.T("trusted_scope"), fmt.Sprintf("%s%s (%s)%s", colorGreen, r.T("yes"), report.Info.TrustedScopeOrg, colorReset))
+	if info.IsTrustedScope {
+		r.printField(w, r.T("trusted_scope"), fmt.Sprintf("%s%s (%s)%s", colorGreen, r.T("yes"), info.TrustedScopeOrg, colorReset))
 	}
-	fmt.Fprintln(w)
+}
 
-	// ── Risk Score Visual ──
-	r.printSectionHeader(w, r.T("risk_assessment"))
-	r.printRiskBar(w, report.Score, scoreColor)
-	fmt.Fprintln(w)
-
-	// ── Analyzer Errors ──
+func (r *Reporter) renderTerminalErrors(w io.Writer, results []analyzer.Result) {
 	hasErrors := false
-	for _, result := range report.Results {
+	for _, result := range results {
 		if result.Err != nil {
 			if !hasErrors {
 				r.printSectionHeader(w, r.T("analyzer_errors"))
@@ -519,35 +558,17 @@ func (r *Reporter) renderTerminal(report Report) error {
 	if hasErrors {
 		fmt.Fprintln(w)
 	}
+}
 
-	if len(allFindings) == 0 {
-		r.printBox(w, " "+r.T("no_issues"), colorGreen)
-		fmt.Fprintln(w)
-		fmt.Fprintf(w, "%s%s%s\n", colorDim, strings.Repeat("═", reportWidth), colorReset)
-		fmt.Fprintf(w, "%s%s%s\n\n", colorDim, r.T("audited_at", report.AuditedAt), colorReset)
-		return nil
-	}
-
-	sort.Slice(allFindings, func(i, j int) bool {
-		return allFindings[i].Severity > allFindings[j].Severity
-	})
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// SECTION 4: FINDINGS BY REMEDIATION ACTION (Grouped for efficiency)
-	// ═══════════════════════════════════════════════════════════════════════
-	// Use merged findings for concise display (unless verbose mode)
-	mergedFindings := mergeSimilarFindings(allFindings)
-
+func (r *Reporter) renderFindingsByAction(w io.Writer, allFindings []analyzer.Finding, mergedFindings []MergedFinding) {
 	r.printSectionHeader(w, r.T("findings_by_action"))
 
-	// Show merge summary if findings were deduplicated
 	if len(mergedFindings) < len(allFindings) && !r.verbose {
 		fmt.Fprintf(w, "  %s%s%s\n", colorDim,
 			fmt.Sprintf(r.T("merged_summary"), len(allFindings), len(mergedFindings)), colorReset)
 		fmt.Fprintln(w)
 	}
 
-	// Convert merged findings back to regular findings for grouping
 	findingsForGrouping := allFindings
 	if !r.verbose {
 		findingsForGrouping = make([]analyzer.Finding, 0, len(mergedFindings))
@@ -557,13 +578,7 @@ func (r *Reporter) renderTerminal(report Report) error {
 	}
 
 	remediationGroups := r.groupByRemediation(findingsForGrouping)
-
-	// Create a map of finding key to merged finding for count lookup
-	mergedMap := make(map[string]MergedFinding)
-	for _, mf := range mergedFindings {
-		key := mf.Analyzer + ":" + mf.Title
-		mergedMap[key] = mf
-	}
+	mergedMap := buildMergedMap(mergedFindings)
 
 	groupOrder := []string{"block_install", "review_scripts", "verify_source", "update_version", "audit_deps", "monitor"}
 	for _, groupKey := range groupOrder {
@@ -571,38 +586,46 @@ func (r *Reporter) renderTerminal(report Report) error {
 		if !exists || len(findings) == 0 {
 			continue
 		}
-
-		groupTitle := r.T("action_group_" + groupKey)
-		maxSev := getMaxSeverity(findings)
-		sevColor := severityColor(maxSev)
-
-		fmt.Fprintf(w, "\n  %s%s▶ %s%s (%d)\n", colorBold, sevColor, groupTitle, colorReset, len(findings))
-		fmt.Fprintf(w, "  %s%s%s\n", colorDim, strings.Repeat("─", reportWidth-4), colorReset)
-
-		for _, f := range findings {
-			sevColor := severityColor(f.Severity)
-			title := r.T(f.Title)
-			// Add count if this finding was merged
-			if !r.verbose {
-				key := f.Analyzer + ":" + f.Title
-				if mf, ok := mergedMap[key]; ok && mf.Count > 1 {
-					title += fmt.Sprintf(" %s(x%d)%s", colorDim, mf.Count, colorReset)
-				}
-			}
-			fmt.Fprintf(w, "    %s%s%s %s\n", sevColor, severityIcon(f.Severity), colorReset, title)
-			// Single-line description for grouped view
-			desc := r.T(f.Description)
-			if len(desc) > 60 {
-				desc = desc[:60] + "..."
-			}
-			fmt.Fprintf(w, "      %s%s%s\n", colorDim, desc, colorReset)
-		}
+		r.renderActionGroup(w, groupKey, findings, mergedMap)
 	}
 	fmt.Fprintln(w)
+}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// SECTION 5: DETAILED FINDINGS (Reference)
-	// ═══════════════════════════════════════════════════════════════════════
+func buildMergedMap(mergedFindings []MergedFinding) map[string]MergedFinding {
+	m := make(map[string]MergedFinding)
+	for _, mf := range mergedFindings {
+		m[mf.Analyzer+":"+mf.Title] = mf
+	}
+	return m
+}
+
+func (r *Reporter) renderActionGroup(w io.Writer, groupKey string, findings []analyzer.Finding, mergedMap map[string]MergedFinding) {
+	groupTitle := r.T("action_group_" + groupKey)
+	maxSev := getMaxSeverity(findings)
+	sevColor := severityColor(maxSev)
+
+	fmt.Fprintf(w, "\n  %s%s▶ %s%s (%d)\n", colorBold, sevColor, groupTitle, colorReset, len(findings))
+	fmt.Fprintf(w, "  %s%s%s\n", colorDim, strings.Repeat("─", reportWidth-4), colorReset)
+
+	for _, f := range findings {
+		sc := severityColor(f.Severity)
+		title := r.T(f.Title)
+		if !r.verbose {
+			key := f.Analyzer + ":" + f.Title
+			if mf, ok := mergedMap[key]; ok && mf.Count > 1 {
+				title += fmt.Sprintf(" %s(x%d)%s", colorDim, mf.Count, colorReset)
+			}
+		}
+		fmt.Fprintf(w, "    %s%s%s %s\n", sc, severityIcon(f.Severity), colorReset, title)
+		desc := r.T(f.Description)
+		if len(desc) > 60 {
+			desc = desc[:60] + "..."
+		}
+		fmt.Fprintf(w, "      %s%s%s\n", colorDim, desc, colorReset)
+	}
+}
+
+func (r *Reporter) renderTerminalDetailedFindings(w io.Writer, allFindings []analyzer.Finding, mergedFindings []MergedFinding) {
 	r.printSectionHeader(w, r.T("detailed_findings"))
 	if r.verbose {
 		fmt.Fprintf(w, "  %s%s%s\n\n", colorDim, r.T("detailed_findings_note"), colorReset)
@@ -618,61 +641,60 @@ func (r *Reporter) renderTerminal(report Report) error {
 	}
 
 	for _, sev := range severityOrder {
-		var findingsToDisplay []analyzer.Finding
-		var mergedToDisplay []MergedFinding
-
-		if r.verbose {
-			findingsToDisplay = filterBySeverity(allFindings, sev)
-		} else {
-			// Use merged findings for this severity
-			for _, mf := range mergedFindings {
-				if mf.Severity == sev {
-					mergedToDisplay = append(mergedToDisplay, mf)
-				}
-			}
-		}
-
-		count := len(findingsToDisplay)
-		if !r.verbose {
-			count = len(mergedToDisplay)
-		}
-		if count == 0 {
-			continue
-		}
-
-		sevColor := severityColor(sev)
-		label := r.T("findings_count", r.GetSeverityLabel(sev), count)
-		fmt.Fprintf(w, "%s%s%s %s %s\n", colorBold, sevColor, severityIcon(sev), label, colorReset)
-		fmt.Fprintf(w, "%s%s%s\n", colorDim, strings.Repeat("─", reportWidth), colorReset)
-
-		if r.verbose {
-			// Show all individual findings
-			for i, f := range findingsToDisplay {
-				r.printDetailedFinding(w, f, sevColor, sev, 0)
-				if i < len(findingsToDisplay)-1 {
-					fmt.Fprintf(w, "\n  %s%s%s\n", colorDim, strings.Repeat("·", reportWidth-4), colorReset)
-				}
-			}
-		} else {
-			// Show merged findings with counts
-			for i, mf := range mergedToDisplay {
-				r.printDetailedFinding(w, mf.Finding, sevColor, sev, mf.Count)
-				if i < len(mergedToDisplay)-1 {
-					fmt.Fprintf(w, "\n  %s%s%s\n", colorDim, strings.Repeat("·", reportWidth-4), colorReset)
-				}
-			}
-		}
-		fmt.Fprintf(w, "\n%s%s%s\n\n", colorDim, strings.Repeat("─", reportWidth), colorReset)
+		r.renderSeveritySection(w, sev, allFindings, mergedFindings)
 	}
 
-	// Add verbose mode hint at the end
 	if !r.verbose && len(mergedFindings) < len(allFindings) {
 		fmt.Fprintf(w, "  %s%s%s\n\n", colorDim, r.T("verbose_hint"), colorReset)
 	}
+}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// SECTION 6: QUICK REFERENCE (Commands)
-	// ═══════════════════════════════════════════════════════════════════════
+func (r *Reporter) renderSeveritySection(w io.Writer, sev analyzer.Severity, allFindings []analyzer.Finding, mergedFindings []MergedFinding) {
+	var findingsToDisplay []analyzer.Finding
+	var mergedToDisplay []MergedFinding
+
+	if r.verbose {
+		findingsToDisplay = filterBySeverity(allFindings, sev)
+	} else {
+		for _, mf := range mergedFindings {
+			if mf.Severity == sev {
+				mergedToDisplay = append(mergedToDisplay, mf)
+			}
+		}
+	}
+
+	count := len(findingsToDisplay)
+	if !r.verbose {
+		count = len(mergedToDisplay)
+	}
+	if count == 0 {
+		return
+	}
+
+	sevColor := severityColor(sev)
+	label := r.T("findings_count", r.GetSeverityLabel(sev), count)
+	fmt.Fprintf(w, "%s%s%s %s %s\n", colorBold, sevColor, severityIcon(sev), label, colorReset)
+	fmt.Fprintf(w, "%s%s%s\n", colorDim, strings.Repeat("─", reportWidth), colorReset)
+
+	if r.verbose {
+		for i, f := range findingsToDisplay {
+			r.printDetailedFinding(w, f, sevColor, sev, 0)
+			if i < len(findingsToDisplay)-1 {
+				fmt.Fprintf(w, "\n  %s%s%s\n", colorDim, strings.Repeat("·", reportWidth-4), colorReset)
+			}
+		}
+	} else {
+		for i, mf := range mergedToDisplay {
+			r.printDetailedFinding(w, mf.Finding, sevColor, sev, mf.Count)
+			if i < len(mergedToDisplay)-1 {
+				fmt.Fprintf(w, "\n  %s%s%s\n", colorDim, strings.Repeat("·", reportWidth-4), colorReset)
+			}
+		}
+	}
+	fmt.Fprintf(w, "\n%s%s%s\n\n", colorDim, strings.Repeat("─", reportWidth), colorReset)
+}
+
+func (r *Reporter) renderQuickReference(w io.Writer, report Report) {
 	r.printSectionHeader(w, r.T("quick_reference"))
 	fmt.Fprintf(w, "  %s%s%s\n", colorDim, r.T("quick_ref_intro"), colorReset)
 	fmt.Fprintln(w)
@@ -683,17 +705,11 @@ func (r *Reporter) renderTerminal(report Report) error {
 	fmt.Fprintf(w, "  %s# %s%s\n", colorDim, r.T("quick_ref_check_deps"), colorReset)
 	fmt.Fprintf(w, "  %snpm ls --all %s%s\n", colorCyan, report.Package, colorReset)
 	fmt.Fprintln(w)
+}
 
-	// ── Per-Analyzer Breakdown ──
-	r.printSectionHeader(w, r.T("analyzer_breakdown"))
-	r.printAnalyzerBreakdown(w, report.Results)
-	fmt.Fprintln(w)
-
-	// ── Footer ──
+func (r *Reporter) renderTerminalFooter(w io.Writer, auditedAt string) {
 	fmt.Fprintf(w, "%s%s%s\n", colorDim, strings.Repeat("═", reportWidth), colorReset)
-	fmt.Fprintf(w, "%s%s%s\n\n", colorDim, r.T("audited_at", report.AuditedAt), colorReset)
-
-	return nil
+	fmt.Fprintf(w, "%s%s%s\n\n", colorDim, r.T("audited_at", auditedAt), colorReset)
 }
 
 // actionItem represents a single action in the checklist.
@@ -721,35 +737,17 @@ func (r *Reporter) generateActionChecklist(score int, findings []analyzer.Findin
 	var actions []actionItem
 	seen := make(map[string]bool)
 
-	// Critical: Don't install without review
 	if score >= 70 {
 		actions = append(actions, actionItem{r.T("action_do_not_install"), true})
 	}
 
 	for _, f := range findings {
-		switch {
-		case f.Analyzer == "install-scripts" && f.Severity >= analyzer.SeverityHigh && !seen["scripts"]:
-			actions = append(actions, actionItem{r.T("action_review_scripts"), f.Severity >= analyzer.SeverityCritical})
-			seen["scripts"] = true
-		case f.Analyzer == "typosquatting" && !seen["typo"]:
-			actions = append(actions, actionItem{r.T("action_verify_name"), true})
-			seen["typo"] = true
-		case f.Analyzer == "vulnerabilities" && !seen["vuln"]:
-			actions = append(actions, actionItem{r.T("action_check_updates"), f.Severity >= analyzer.SeverityCritical})
-			seen["vuln"] = true
-		case f.Analyzer == "provenance" && !seen["prov"]:
-			actions = append(actions, actionItem{r.T("action_verify_provenance"), false})
-			seen["prov"] = true
-		case f.Analyzer == "maintainers" && f.Severity >= analyzer.SeverityMedium && !seen["maint"]:
-			actions = append(actions, actionItem{r.T("action_verify_maintainer"), f.Severity >= analyzer.SeverityHigh})
-			seen["maint"] = true
-		case f.Analyzer == "dynamic-analysis" && f.Severity >= analyzer.SeverityHigh && !seen["dynamic"]:
-			actions = append(actions, actionItem{r.T("action_sandbox_detected"), true})
-			seen["dynamic"] = true
+		if item, key := r.findingToAction(f, seen); key != "" {
+			actions = append(actions, item)
+			seen[key] = true
 		}
 	}
 
-	// Always add safe install command if scripts exist
 	if hasScripts && !seen["scripts"] {
 		actions = append(actions, actionItem{r.T("action_use_ignore_scripts"), false})
 	}
@@ -759,6 +757,38 @@ func (r *Reporter) generateActionChecklist(score int, findings []analyzer.Findin
 	}
 
 	return actions
+}
+
+func (r *Reporter) findingToAction(f analyzer.Finding, seen map[string]bool) (actionItem, string) {
+	key, actionKey, isCritical := matchActionRule(f)
+	if key == "" || seen[key] {
+		return actionItem{}, ""
+	}
+	return actionItem{r.T(actionKey), isCritical}, key
+}
+
+func matchActionRule(f analyzer.Finding) (key, actionKey string, isCritical bool) {
+	switch f.Analyzer {
+	case "install-scripts":
+		if f.Severity >= analyzer.SeverityHigh {
+			return "scripts", "action_review_scripts", f.Severity >= analyzer.SeverityCritical
+		}
+	case "typosquatting":
+		return "typo", "action_verify_name", true
+	case "vulnerabilities":
+		return "vuln", "action_check_updates", f.Severity >= analyzer.SeverityCritical
+	case "provenance":
+		return "prov", "action_verify_provenance", false
+	case "maintainers":
+		if f.Severity >= analyzer.SeverityMedium {
+			return "maint", "action_verify_maintainer", f.Severity >= analyzer.SeverityHigh
+		}
+	case "dynamic-analysis":
+		if f.Severity >= analyzer.SeverityHigh {
+			return "dynamic", "action_sandbox_detected", true
+		}
+	}
+	return "", "", false
 }
 
 // groupByRemediation groups findings by their remediation action.
@@ -821,7 +851,7 @@ func (r *Reporter) renderMarkdown(report Report) error {
 	}
 	fmt.Fprintf(w, "- **%s**: %d %s\n", r.T("versions"), report.Info.TotalVersions, r.T("published"))
 	fmt.Fprintf(w, "- **%s**: %d %s\n", r.T("dependencies"), report.Info.Dependencies, r.T("direct"))
-	
+
 	scoreColor, scoreLabel := r.GetRiskLevel(report.Score)
 	_ = scoreColor // Not used in Markdown
 	fmt.Fprintf(w, "\n## %s\n\n", r.T("risk_assessment"))
@@ -832,7 +862,7 @@ func (r *Reporter) renderMarkdown(report Report) error {
 		fmt.Fprintf(w, "> %s\n\n", r.T("no_issues"))
 	} else {
 		fmt.Fprintf(w, "## %s\n\n", r.T("findings_summary"))
-		
+
 		for _, f := range allFindings {
 			severityEmoji := "🛡️"
 			switch f.Severity {
@@ -849,11 +879,11 @@ func (r *Reporter) renderMarkdown(report Report) error {
 			fmt.Fprintf(w, "### %s [%s] %s\n\n", severityEmoji, f.Severity, r.T(f.Title))
 			fmt.Fprintf(w, "- **%s**: %s\n", r.T("analyzer_label", ""), f.Analyzer)
 			fmt.Fprintf(w, "\n%s\n\n", r.T(f.Description))
-			
+
 			if f.ExploitExample != "" {
 				fmt.Fprintf(w, "#### 💣 %s\n\n```javascript\n%s\n```\n\n", r.T("attack_scenario"), r.T(f.ExploitExample))
 			}
-			
+
 			if f.Remediation != "" {
 				fmt.Fprintf(w, "#### ✅ %s\n\n> %s\n\n", r.T("remediation"), r.T(f.Remediation))
 			}
@@ -891,7 +921,7 @@ func (r *Reporter) renderHTML(report Report) error {
 <body>`, r.T("title"), report.Package)
 
 	fmt.Fprintf(w, "<h1>%s</h1>", r.T("title"))
-	
+
 	fmt.Fprintf(w, "<div class='card'><h2>%s</h2><ul>", r.T("pkg_info"))
 	fmt.Fprintf(w, "<li><b>%s</b>: %s@%s</li>", r.T("package"), report.Package, report.Version)
 	if report.Info.License != "" {
@@ -899,7 +929,7 @@ func (r *Reporter) renderHTML(report Report) error {
 	}
 	fmt.Fprintf(w, "<li><b>%s</b>: %d</li>", r.T("versions"), report.Info.TotalVersions)
 	fmt.Fprintf(w, "</ul></div>")
-	
+
 	_, scoreLabel := r.GetRiskLevel(report.Score)
 	fmt.Fprintf(w, "<div class='card'><h2>%s</h2><h3 class='score-high'>%s (%d/100)</h3></div>", r.T("risk_assessment"), scoreLabel, report.Score)
 
@@ -911,7 +941,7 @@ func (r *Reporter) renderHTML(report Report) error {
 			fmt.Fprintf(w, "<h3>[%s] %s</h3>", f.Severity, r.T(f.Title))
 			fmt.Fprintf(w, "<p><i>%s: %s</i></p>", r.T("analyzer_label", ""), f.Analyzer)
 			fmt.Fprintf(w, "<p>%s</p>", r.T(f.Description))
-			
+
 			if f.ExploitExample != "" {
 				fmt.Fprintf(w, "<h4>💣 %s</h4><pre><code>%s</code></pre>", r.T("attack_scenario"), r.T(f.ExploitExample))
 			}
@@ -923,7 +953,7 @@ func (r *Reporter) renderHTML(report Report) error {
 	} else {
 		fmt.Fprintf(w, "<div class='card'><p>%s</p></div>", r.T("no_issues"))
 	}
-	
+
 	fmt.Fprintf(w, "<div class='footer'>%s</div></body></html>", r.T("audited_at", report.AuditedAt))
 	return nil
 }
@@ -949,6 +979,7 @@ func (r *Reporter) renderPDF(report Report) error {
 
 	return pdf.Output(r.writer)
 }
+
 // ── Rendering Helpers ──
 
 func (r *Reporter) printBox(w io.Writer, text string, color string) {
@@ -1051,19 +1082,19 @@ func (r *Reporter) printWrapped(w io.Writer, text string, indent string, width i
 	}
 }
 
-func (r *Reporter) printAnalyzerBreakdown(w io.Writer, results []analyzer.Result) {
-	// Sort by finding count descending
-	type entry struct {
-		name     string
-		total    int
-		critical int
-		high     int
-		medium   int
-		low      int
-	}
-	var entries []entry
+type breakdownEntry struct {
+	name     string
+	total    int
+	critical int
+	high     int
+	medium   int
+	low      int
+}
+
+func buildBreakdownEntries(results []analyzer.Result) []breakdownEntry {
+	var entries []breakdownEntry
 	for _, res := range results {
-		e := entry{name: res.AnalyzerName}
+		e := breakdownEntry{name: res.AnalyzerName}
 		for _, f := range res.Findings {
 			e.total++
 			switch f.Severity {
@@ -1082,8 +1113,12 @@ func (r *Reporter) printAnalyzerBreakdown(w io.Writer, results []analyzer.Result
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].total > entries[j].total
 	})
+	return entries
+}
 
-	maxBar := 30
+func (r *Reporter) printAnalyzerBreakdown(w io.Writer, results []analyzer.Result) {
+	entries := buildBreakdownEntries(results)
+
 	maxFindings := 0
 	for _, e := range entries {
 		if e.total > maxFindings {
@@ -1092,42 +1127,46 @@ func (r *Reporter) printAnalyzerBreakdown(w io.Writer, results []analyzer.Result
 	}
 
 	for _, e := range entries {
-		barLen := 0
-		if maxFindings > 0 {
-			barLen = e.total * maxBar / maxFindings
-		}
-		if barLen == 0 && e.total > 0 {
-			barLen = 1
-		}
-
-		bar := ""
-		if e.total > 0 {
-			bar = strings.Repeat("█", barLen)
-		}
-
-		fmt.Fprintf(w, "  %-18s %s%-30s%s %d", e.name, severityColorForCount(e), bar, colorReset, e.total)
-		if e.total > 0 {
-			parts := []string{}
-			if e.critical > 0 {
-				parts = append(parts, fmt.Sprintf("%d%s", e.critical, r.T("severity_critical_short")))
-			}
-			if e.high > 0 {
-				parts = append(parts, fmt.Sprintf("%d%s", e.high, r.T("severity_high_short")))
-			}
-			if e.medium > 0 {
-				parts = append(parts, fmt.Sprintf("%d%s", e.medium, r.T("severity_medium_short")))
-			}
-			if e.low > 0 {
-				parts = append(parts, fmt.Sprintf("%d%s", e.low, r.T("severity_low_short")))
-			}
-			fmt.Fprintf(w, " (%s)", strings.Join(parts, " "))
-		} else {
-			fmt.Fprintf(w, " %s✓ %s%s", colorGreen, r.T("clean"), colorReset)
-		}
-		fmt.Fprintln(w)
+		r.printBreakdownEntry(w, e, maxFindings)
 	}
 }
 
+func (r *Reporter) printBreakdownEntry(w io.Writer, e breakdownEntry, maxFindings int) {
+	const maxBar = 30
+	barLen := 0
+	if maxFindings > 0 {
+		barLen = e.total * maxBar / maxFindings
+	}
+	if barLen == 0 && e.total > 0 {
+		barLen = 1
+	}
+
+	bar := ""
+	if e.total > 0 {
+		bar = strings.Repeat("█", barLen)
+	}
+
+	fmt.Fprintf(w, "  %-18s %s%-30s%s %d", e.name, breakdownColor(e), bar, colorReset, e.total)
+	if e.total > 0 {
+		parts := []string{}
+		if e.critical > 0 {
+			parts = append(parts, fmt.Sprintf("%d%s", e.critical, r.T("severity_critical_short")))
+		}
+		if e.high > 0 {
+			parts = append(parts, fmt.Sprintf("%d%s", e.high, r.T("severity_high_short")))
+		}
+		if e.medium > 0 {
+			parts = append(parts, fmt.Sprintf("%d%s", e.medium, r.T("severity_medium_short")))
+		}
+		if e.low > 0 {
+			parts = append(parts, fmt.Sprintf("%d%s", e.low, r.T("severity_low_short")))
+		}
+		fmt.Fprintf(w, " (%s)", strings.Join(parts, " "))
+	} else {
+		fmt.Fprintf(w, " %s✓ %s%s", colorGreen, r.T("clean"), colorReset)
+	}
+	fmt.Fprintln(w)
+}
 
 // ── Pure Functions ──
 
@@ -1175,18 +1214,8 @@ func severityIcon(s analyzer.Severity) string {
 	}
 }
 
-func severityColorForCount(e struct {
-	name     string
-	total    int
-	critical int
-	high     int
-	medium   int
-	low      int
-}) string {
-	if e.critical > 0 {
-		return colorRed
-	}
-	if e.high > 0 {
+func breakdownColor(e breakdownEntry) string {
+	if e.critical > 0 || e.high > 0 {
 		return colorRed
 	}
 	if e.medium > 0 {
@@ -1202,7 +1231,6 @@ func (r *Reporter) pluralize(count int) string {
 	return r.T("findings_plural")
 }
 
-
 func collectFindings(results []analyzer.Result) []analyzer.Finding {
 	var all []analyzer.Finding
 	for _, r := range results {
@@ -1214,8 +1242,8 @@ func collectFindings(results []analyzer.Result) []analyzer.Finding {
 // MergedFinding represents multiple similar findings combined into one.
 type MergedFinding struct {
 	analyzer.Finding
-	Count       int      // Number of findings merged
-	Instances   []string // Brief descriptions of each instance (for context)
+	Count     int      // Number of findings merged
+	Instances []string // Brief descriptions of each instance (for context)
 }
 
 // mergeSimilarFindings combines findings with the same analyzer and title.

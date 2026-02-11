@@ -16,10 +16,10 @@ type PackageJSON struct {
 
 // PackageLock represents a package-lock.json file.
 type PackageLock struct {
-	Name            string                      `json:"name"`
-	Version         string                      `json:"version"`
-	LockfileVersion int                         `json:"lockfileVersion"`
-	Packages        map[string]LockPackage      `json:"packages"`        // For lockfileVersion 3
+	Name            string                       `json:"name"`
+	Version         string                       `json:"version"`
+	LockfileVersion int                          `json:"lockfileVersion"`
+	Packages        map[string]LockPackage       `json:"packages"`     // For lockfileVersion 3
 	Dependencies    map[string]LegacyLockPackage `json:"dependencies"` // For lockfileVersion 1, 2
 }
 
@@ -31,9 +31,9 @@ type LockPackage struct {
 }
 
 type LegacyLockPackage struct {
-	Version      string                        `json:"version"`
-	Resolved     string                        `json:"resolved"`
-	Integrity    string                        `json:"integrity"`
+	Version      string                       `json:"version"`
+	Resolved     string                       `json:"resolved"`
+	Integrity    string                       `json:"integrity"`
 	Dependencies map[string]LegacyLockPackage `json:"dependencies"`
 }
 
@@ -118,7 +118,7 @@ func AuditNodeModules(root string) ([]Dependency, error) {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-		
+
 		// Handle scoped packages
 		if strings.HasPrefix(entry.Name(), "@") {
 			scopedEntries, err := os.ReadDir(nodeModulesPath + "/" + entry.Name())

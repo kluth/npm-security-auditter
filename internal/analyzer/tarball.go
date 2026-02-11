@@ -25,7 +25,7 @@ var minifiedPathPatterns = []string{
 	"/umd/",
 	"/esm/",
 	"/cjs/",
-	"/fesm",  // Angular flat ESM
+	"/fesm", // Angular flat ESM
 	".min.",
 	".bundle.",
 	".prod.",
@@ -325,66 +325,69 @@ func (a *TarballAnalyzer) detectObfuscation(ep *tarball.ExtractedPackage) []Find
 		}
 
 		isMinified := isLikelyMinifiedPath(f.Path) || isLikelyMinifiedContent(content)
-
-		lines := bytes.Split(content, []byte("\n"))
-		if len(lines) == 0 {
-			continue
-		}
-
-		// Check average line length.
-		totalLen := 0
-		for _, line := range lines {
-			totalLen += len(line)
-		}
-		avgLineLen := totalLen / len(lines)
-
-		// For minified files, only flag extremely long lines (likely packed/obfuscated)
-		lineThreshold := 5000
-		if isMinified {
-			lineThreshold = 50000 // Much higher threshold for known minified files
-		}
-
-		if avgLineLen > lineThreshold {
-			severity := SeverityMedium
-			desc := fmt.Sprintf("File %q has an average line length of %d characters, which suggests obfuscation or suspicious minification.", f.Path, avgLineLen)
-			if isMinified {
-				severity = SeverityLow
-				desc += " This is a distribution file, so long lines are expected from minification."
-			}
-			findings = append(findings, Finding{
-				Analyzer:    "tarball-analysis",
-				Title:       "Extremely long lines (likely minified/obfuscated)",
-				Description: desc,
-				Severity:    severity,
-			})
-		}
-
-		// Skip non-alphanumeric ratio check entirely for minified files.
-		// Minified code naturally has high punctuation density.
-		if isMinified {
-			continue
-		}
-
-		// Check non-alphanumeric ratio.
-		if len(content) > 100 {
-			nonAlpha := 0
-			for _, b := range content {
-				if !((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == ' ' || b == '\n' || b == '\t') {
-					nonAlpha++
-				}
-			}
-			ratio := float64(nonAlpha) / float64(len(content))
-			if ratio > 0.5 {
-				findings = append(findings, Finding{
-					Analyzer:    "tarball-analysis",
-					Title:       "High non-alphanumeric ratio",
-					Description: fmt.Sprintf("File %q has a non-alphanumeric character ratio of %.2f, suggesting encoded or obfuscated content.", f.Path, ratio),
-					Severity:    SeverityMedium,
-				})
-			}
+		findings = append(findings, a.checkLineLengths(content, f.Path, isMinified)...)
+		if !isMinified {
+			findings = append(findings, a.checkNonAlphaRatio(content, f.Path)...)
 		}
 	}
 	return findings
+}
+
+func (a *TarballAnalyzer) checkLineLengths(content []byte, path string, isMinified bool) []Finding {
+	lines := bytes.Split(content, []byte("\n"))
+	if len(lines) == 0 {
+		return nil
+	}
+
+	totalLen := 0
+	for _, line := range lines {
+		totalLen += len(line)
+	}
+	avgLineLen := totalLen / len(lines)
+
+	lineThreshold := 5000
+	if isMinified {
+		lineThreshold = 50000
+	}
+
+	if avgLineLen <= lineThreshold {
+		return nil
+	}
+
+	severity := SeverityMedium
+	desc := fmt.Sprintf("File %q has an average line length of %d characters, which suggests obfuscation or suspicious minification.", path, avgLineLen)
+	if isMinified {
+		severity = SeverityLow
+		desc += " This is a distribution file, so long lines are expected from minification."
+	}
+	return []Finding{{
+		Analyzer:    "tarball-analysis",
+		Title:       "Extremely long lines (likely minified/obfuscated)",
+		Description: desc,
+		Severity:    severity,
+	}}
+}
+
+func (a *TarballAnalyzer) checkNonAlphaRatio(content []byte, path string) []Finding {
+	if len(content) <= 100 {
+		return nil
+	}
+	nonAlpha := 0
+	for _, b := range content {
+		if !((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == ' ' || b == '\n' || b == '\t') {
+			nonAlpha++
+		}
+	}
+	ratio := float64(nonAlpha) / float64(len(content))
+	if ratio <= 0.5 {
+		return nil
+	}
+	return []Finding{{
+		Analyzer:    "tarball-analysis",
+		Title:       "High non-alphanumeric ratio",
+		Description: fmt.Sprintf("File %q has a non-alphanumeric character ratio of %.2f, suggesting encoded or obfuscated content.", path, ratio),
+		Severity:    SeverityMedium,
+	}}
 }
 
 func (a *TarballAnalyzer) findHiddenFiles(ep *tarball.ExtractedPackage) []Finding {

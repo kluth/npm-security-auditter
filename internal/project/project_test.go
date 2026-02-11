@@ -7,97 +7,95 @@ import (
 )
 
 func TestParsePackageJSON(t *testing.T) {
-	t.Run("valid package.json with dependencies", func(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "package.json")
-		content := `{
-			"name": "test-pkg",
-			"version": "1.0.0",
-			"dependencies": {
-				"lodash": "^4.17.21",
-				"express": "^4.18.2"
-			},
-			"devDependencies": {
-				"jest": "^29.0.0"
-			}
-		}`
-		os.WriteFile(path, []byte(content), 0o644)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "package.json")
+	content := `{
+		"name": "test-pkg",
+		"version": "1.0.0",
+		"dependencies": {
+			"lodash": "^4.17.21",
+			"express": "^4.18.2"
+		},
+		"devDependencies": {
+			"jest": "^29.0.0"
+		}
+	}`
+	os.WriteFile(path, []byte(content), 0o644)
 
-		deps, err := ParsePackageJSON(path)
-		if err != nil {
-			t.Fatalf("ParsePackageJSON() error = %v", err)
-		}
+	deps, err := ParsePackageJSON(path)
+	if err != nil {
+		t.Fatalf("ParsePackageJSON() error = %v", err)
+	}
 
-		if len(deps) != 3 {
-			t.Errorf("expected 3 deps, got %d", len(deps))
-		}
+	if len(deps) != 3 {
+		t.Errorf("expected 3 deps, got %d", len(deps))
+	}
 
-		found := map[string]bool{}
-		for _, d := range deps {
-			found[d.Name] = true
-			if d.Name == "lodash" && d.Version != "^4.17.21" {
-				t.Errorf("lodash version = %q, want %q", d.Version, "^4.17.21")
-			}
+	found := map[string]bool{}
+	for _, d := range deps {
+		found[d.Name] = true
+		if d.Name == "lodash" && d.Version != "^4.17.21" {
+			t.Errorf("lodash version = %q, want %q", d.Version, "^4.17.21")
 		}
-		if !found["lodash"] || !found["express"] || !found["jest"] {
-			t.Error("expected lodash, express, and jest in deps")
-		}
-	})
+	}
+	if !found["lodash"] || !found["express"] || !found["jest"] {
+		t.Error("expected lodash, express, and jest in deps")
+	}
+}
 
-	t.Run("empty package.json", func(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "package.json")
-		os.WriteFile(path, []byte(`{}`), 0o644)
+func TestParsePackageJSONEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "package.json")
+	os.WriteFile(path, []byte(`{}`), 0o644)
 
-		deps, err := ParsePackageJSON(path)
-		if err != nil {
-			t.Fatalf("ParsePackageJSON() error = %v", err)
-		}
-		if len(deps) != 0 {
-			t.Errorf("expected 0 deps, got %d", len(deps))
-		}
-	})
+	deps, err := ParsePackageJSON(path)
+	if err != nil {
+		t.Fatalf("ParsePackageJSON() error = %v", err)
+	}
+	if len(deps) != 0 {
+		t.Errorf("expected 0 deps, got %d", len(deps))
+	}
+}
 
-	t.Run("file not found", func(t *testing.T) {
-		_, err := ParsePackageJSON("/nonexistent/package.json")
-		if err == nil {
-			t.Error("expected error for missing file")
-		}
-	})
+func TestParsePackageJSONFileNotFound(t *testing.T) {
+	_, err := ParsePackageJSON("/nonexistent/package.json")
+	if err == nil {
+		t.Error("expected error for missing file")
+	}
+}
 
-	t.Run("invalid JSON", func(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "package.json")
-		os.WriteFile(path, []byte(`{invalid`), 0o644)
+func TestParsePackageJSONInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "package.json")
+	os.WriteFile(path, []byte(`{invalid`), 0o644)
 
-		_, err := ParsePackageJSON(path)
-		if err == nil {
-			t.Error("expected error for invalid JSON")
-		}
-	})
+	_, err := ParsePackageJSON(path)
+	if err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+}
 
-	t.Run("only devDependencies", func(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "package.json")
-		content := `{
-			"name": "dev-only",
-			"devDependencies": {
-				"eslint": "^8.0.0"
-			}
-		}`
-		os.WriteFile(path, []byte(content), 0o644)
+func TestParsePackageJSONDevOnly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "package.json")
+	content := `{
+		"name": "dev-only",
+		"devDependencies": {
+			"eslint": "^8.0.0"
+		}
+	}`
+	os.WriteFile(path, []byte(content), 0o644)
 
-		deps, err := ParsePackageJSON(path)
-		if err != nil {
-			t.Fatalf("ParsePackageJSON() error = %v", err)
-		}
-		if len(deps) != 1 {
-			t.Errorf("expected 1 dep, got %d", len(deps))
-		}
-		if deps[0].Name != "eslint" {
-			t.Errorf("expected eslint, got %s", deps[0].Name)
-		}
-	})
+	deps, err := ParsePackageJSON(path)
+	if err != nil {
+		t.Fatalf("ParsePackageJSON() error = %v", err)
+	}
+	if len(deps) != 1 {
+		t.Errorf("expected 1 dep, got %d", len(deps))
+	}
+	if deps[0].Name != "eslint" {
+		t.Errorf("expected eslint, got %s", deps[0].Name)
+	}
 }
 
 func TestParsePackageLock(t *testing.T) {

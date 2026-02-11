@@ -78,13 +78,13 @@ func (m *MetadataAnalyzer) checkRepository(pkg *registry.PackageMetadata, versio
 			Title:       "No repository URL",
 			Description: "Package has no linked source repository",
 			Severity:    SeverityMedium,
-			                        ExploitExample: "Without a repository link, there is no way to diff published code against source:\n" +
-			                                "    - Attacker publishes package with clean README but malicious code in dist/\n" +
-			                                "    - No repo means no issue tracker, no commit history, no code review\n" +
-			                                "    - `npm pack <pkg> && tar -xzf *.tgz` to manually inspect before installing",
-			                        Remediation: "Manually inspect the package tarball using 'npm pack' before installing. Be cautious if the package has many downloads but no repository link.",
-			                })
-			
+			ExploitExample: "Without a repository link, there is no way to diff published code against source:\n" +
+				"    - Attacker publishes package with clean README but malicious code in dist/\n" +
+				"    - No repo means no issue tracker, no commit history, no code review\n" +
+				"    - `npm pack <pkg> && tar -xzf *.tgz` to manually inspect before installing",
+			Remediation: "Manually inspect the package tarball using 'npm pack' before installing. Be cautious if the package has many downloads but no repository link.",
+		})
+
 		return
 	}
 
@@ -95,13 +95,13 @@ func (m *MetadataAnalyzer) checkRepository(pkg *registry.PackageMetadata, versio
 			Title:       "Empty repository URL",
 			Description: "Package has a repository field but the URL is empty",
 			Severity:    SeverityMedium,
-			                        ExploitExample: "An empty repository URL provides false legitimacy:\n" +
-			                                "    - The field exists (looks normal in metadata) but points nowhere\n" +
-			                                "    - Automated tools may skip repo checks seeing the field is present\n" +
-			                                "    - Always verify the URL actually resolves to a real source repository",
-			                        Remediation: "Verify the source repository independently. This pattern is often used to deceive automated scanners.",
-			                })
-			
+			ExploitExample: "An empty repository URL provides false legitimacy:\n" +
+				"    - The field exists (looks normal in metadata) but points nowhere\n" +
+				"    - Automated tools may skip repo checks seeing the field is present\n" +
+				"    - Always verify the URL actually resolves to a real source repository",
+			Remediation: "Verify the source repository independently. This pattern is often used to deceive automated scanners.",
+		})
+
 		return
 	}
 
@@ -120,13 +120,13 @@ func (m *MetadataAnalyzer) checkRepository(pkg *registry.PackageMetadata, versio
 			Title:       "Unusual repository host",
 			Description: fmt.Sprintf("Repository URL %q is not on a well-known hosting platform", repo.URL),
 			Severity:    SeverityLow,
-			                        ExploitExample: "Attackers point repository URLs to domains they control:\n" +
-			                                "    - Fake repo shows clean code while npm tarball contains the real payload\n" +
-			                                "    - Unrecognized hosts could disappear, making forensics impossible\n" +
-			                                "    - Verify the repo URL matches a known platform and the code matches the tarball",
-			                        Remediation: "Check the reputation of the repository host. If it's a private server, perform additional verification of the package content.",
-			                })
-			
+			ExploitExample: "Attackers point repository URLs to domains they control:\n" +
+				"    - Fake repo shows clean code while npm tarball contains the real payload\n" +
+				"    - Unrecognized hosts could disappear, making forensics impossible\n" +
+				"    - Verify the repo URL matches a known platform and the code matches the tarball",
+			Remediation: "Check the reputation of the repository host. If it's a private server, perform additional verification of the package content.",
+		})
+
 	}
 }
 
@@ -168,12 +168,12 @@ func (m *MetadataAnalyzer) checkLicense(version *registry.PackageVersion, findin
 	// Check for "UNLICENSE" or "WTFPL" which are sometimes used in joke/malicious packages
 	if strings.Contains(license, "WTFPL") || strings.Contains(license, "UNLICENSE") {
 		*findings = append(*findings, Finding{
-			Analyzer:    m.Name(),
-			Title:       "Unconventional license",
-			Description: fmt.Sprintf("Package uses an unconventional license: %s", version.License),
-			Severity:    SeverityLow,
+			Analyzer:       m.Name(),
+			Title:          "Unconventional license",
+			Description:    fmt.Sprintf("Package uses an unconventional license: %s", version.License),
+			Severity:       SeverityLow,
 			ExploitExample: "While sometimes legitimate, unconventional licenses are often seen in low-quality or 'troll' packages.",
-			Remediation: "Verify the authenticity of the package and ensure the license meets your project's legal standards.",
+			Remediation:    "Verify the authenticity of the package and ensure the license meets your project's legal standards.",
 		})
 	}
 }
@@ -192,27 +192,27 @@ func (m *MetadataAnalyzer) checkAge(pkg *registry.PackageMetadata, findings *[]F
 			Title:       "Very new package",
 			Description: fmt.Sprintf("Package was created %s ago", formatDuration(age)),
 			Severity:    SeverityMedium,
-			                        ExploitExample: "Malicious packages are often published and weaponized within hours:\n" +
-			                                "    1. Attacker creates package targeting a trending topic or typo\n" +
-			                                "    2. Pushes to npm — clock starts ticking before detection\n" +
-			                                "    3. Bots/SEO drive installs during the window before npm takedown\n" +
-			                                "    Most malicious packages are removed within 24-48h, but the damage is done.",
-			                        Remediation: "Wait at least 48 hours after a new package is published before installing it, or perform a manual code review if immediate use is required.",
-			                })
-			
+			ExploitExample: "Malicious packages are often published and weaponized within hours:\n" +
+				"    1. Attacker creates package targeting a trending topic or typo\n" +
+				"    2. Pushes to npm — clock starts ticking before detection\n" +
+				"    3. Bots/SEO drive installs during the window before npm takedown\n" +
+				"    Most malicious packages are removed within 24-48h, but the damage is done.",
+			Remediation: "Wait at least 48 hours after a new package is published before installing it, or perform a manual code review if immediate use is required.",
+		})
+
 	} else if age < 30*24*time.Hour {
 		*findings = append(*findings, Finding{
 			Analyzer:    m.Name(),
 			Title:       "New package",
 			Description: fmt.Sprintf("Package was created %s ago", formatDuration(age)),
 			Severity:    SeverityLow,
-			                        ExploitExample: "New packages have no established trust or community review:\n" +
-			                                "    - No download history to establish baseline behavior\n" +
-			                                "    - Not yet indexed by most security scanners\n" +
-			                                "    - Verify the author's other packages and reputation before installing",
-			                        Remediation: "Monitor the package's community adoption and security reports before widespread use.",
-			                })
-			
+			ExploitExample: "New packages have no established trust or community review:\n" +
+				"    - No download history to establish baseline behavior\n" +
+				"    - Not yet indexed by most security scanners\n" +
+				"    - Verify the author's other packages and reputation before installing",
+			Remediation: "Monitor the package's community adoption and security reports before widespread use.",
+		})
+
 	}
 
 	// Check number of versions vs age
@@ -222,14 +222,14 @@ func (m *MetadataAnalyzer) checkAge(pkg *registry.PackageMetadata, findings *[]F
 			Title:       "Stale package",
 			Description: "Package is over 30 days old but has only one version",
 			Severity:    SeverityLow,
-			                        ExploitExample: "Stale single-version packages are prime targets for account takeover:\n" +
-			                                "    - Maintainer may have abandoned the npm account\n" +
-			                                "    - Weak or reused password makes credential stuffing viable\n" +
-			                                "    - Attacker takes over and pushes v1.0.1 with malicious code\n" +
-			                                "    - All existing dependents auto-update via semver ranges (^1.0.0)",
-			                        Remediation: "Use stale packages with caution. Ensure you use a lockfile to prevent accidental updates to a potentially hijacked future release.",
-			                })
-			
+			ExploitExample: "Stale single-version packages are prime targets for account takeover:\n" +
+				"    - Maintainer may have abandoned the npm account\n" +
+				"    - Weak or reused password makes credential stuffing viable\n" +
+				"    - Attacker takes over and pushes v1.0.1 with malicious code\n" +
+				"    - All existing dependents auto-update via semver ranges (^1.0.0)",
+			Remediation: "Use stale packages with caution. Ensure you use a lockfile to prevent accidental updates to a potentially hijacked future release.",
+		})
+
 	}
 }
 
@@ -245,12 +245,12 @@ func (m *MetadataAnalyzer) checkDescription(pkg *registry.PackageMetadata, versi
 			Title:       "No description",
 			Description: "Package has no description",
 			Severity:    SeverityLow,
-			                        ExploitExample: "Missing description is a signal of a hastily published package:\n" +
-			                                "    - Legitimate packages describe their purpose for discoverability\n" +
-			                                "    - Attack packages skip this because they rely on typos, not search",
-			                        Remediation: "Verify the package's purpose manually. This is a low-severity signal but often found in low-quality or malicious packages.",
-			                })
-			
+			ExploitExample: "Missing description is a signal of a hastily published package:\n" +
+				"    - Legitimate packages describe their purpose for discoverability\n" +
+				"    - Attack packages skip this because they rely on typos, not search",
+			Remediation: "Verify the package's purpose manually. This is a low-severity signal but often found in low-quality or malicious packages.",
+		})
+
 	}
 }
 

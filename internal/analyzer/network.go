@@ -52,10 +52,10 @@ func (a *PrivateNetworkAnalyzer) scanContent(content, filename string) []Finding
 	for _, p := range networkPatterns {
 		if p.pattern.MatchString(content) {
 			findings = append(findings, Finding{
-				Analyzer:    a.Name(),
-				Title:       "Private network access detected",
-				Description: "The package contains references to " + p.name + " in " + filename + ". This may indicate attempts to scan internal networks or steal cloud credentials.",
-				Severity:    p.severity,
+				Analyzer:       a.Name(),
+				Title:          "Private network access detected",
+				Description:    "The package contains references to " + p.name + " in " + filename + ". This may indicate attempts to scan internal networks or steal cloud credentials.",
+				Severity:       p.severity,
 				ExploitExample: fmt.Sprintf("fetch('http://%s/latest/meta-data/iam/security-credentials/');", p.pattern.String()),
 				Remediation:    "Block access to the cloud metadata service (169.254.169.254) from within your application environment. Ensure no internal IPs are leaked.",
 			})

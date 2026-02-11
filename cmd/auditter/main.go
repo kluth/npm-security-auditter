@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kluth/npm-security-auditter/internal/ai"
 	"github.com/kluth/npm-security-auditter/internal/analyzer"
+	"github.com/kluth/npm-security-auditter/internal/project"
 	"github.com/kluth/npm-security-auditter/internal/registry"
 	"github.com/kluth/npm-security-auditter/internal/reporter"
 	"github.com/kluth/npm-security-auditter/internal/reputation"
-	"github.com/kluth/npm-security-auditter/internal/project"
 	"github.com/spf13/cobra"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 var (
@@ -42,7 +42,7 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "auditter <package-name>",
 		Short: "Audit npm packages for security risks",
-		                Long: `auditter performs a comprehensive security audit of npm packages.
+		Long: `auditter performs a comprehensive security audit of npm packages.
 		
 		It checks for known vulnerabilities, suspicious install scripts,
 		typosquatting, maintainer risks, metadata anomalies, dependency
@@ -86,63 +86,92 @@ func run(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	var deps []project.Dependency
-	var err error
-
-	if projectPath != "" {
-		if strings.HasSuffix(projectPath, "package-lock.json") {
-			deps, err = project.ParsePackageLock(projectPath)
-		} else if strings.HasSuffix(projectPath, "package.json") {
-			deps, err = project.ParsePackageJSON(projectPath)
-		} else {
-			return fmt.Errorf("invalid project path: must be package.json or package-lock.json")
-		}
-		if err != nil {
-			return fmt.Errorf("failed to parse project file: %w", err)
-		}
-	} else if auditNodeModules {
-		deps, err = project.AuditNodeModules(".")
-		if err != nil {
-			return fmt.Errorf("failed to scan node_modules: %w", err)
-		}
-	} else if len(args) > 0 {
-		deps = []project.Dependency{{Name: args[0]}}
-	} else {
-		return fmt.Errorf("package name, --project path, or --node-modules is required")
+	deps, err := resolveDependencies(args)
+	if err != nil {
+		return err
 	}
 
-	        if jsonOutput {
-	                format = "json"
-	        }
-	
-	        var sev analyzer.Severity
-	        if minSeverity != "" {
-	                var err error
-	                sev, err = parseSeverity(minSeverity)
-	                if err != nil {
-	                        return err
-	                }
-	        }
-	
-	                var out io.Writer = os.Stdout
-	
-	                if outputFile != "" {
-		f, err := os.Create(outputFile)
-		if err != nil {
-			return fmt.Errorf("failed to create output file: %w", err)
-		}
-		defer f.Close()
-		out = f
+	if jsonOutput {
+		format = "json"
+	}
+
+	sev, err := resolveMinSeverity()
+	if err != nil {
+		return err
+	}
+
+	out, cleanup, err := resolveOutput()
+	if err != nil {
+		return err
+	}
+	if cleanup != nil {
+		defer cleanup()
 	}
 
 	rep := reporter.NewWithOptions(out, format, reporter.Language(lang), verbose)
-	var projectReport reporter.ProjectReport
-	projectReport.ProjectName = projectPath
-	if auditNodeModules {
-		projectReport.ProjectName = "node_modules"
+	projectReport := buildProjectReport(deps, sev, registry.NewClient(registryURL), buildAnalyzers())
+
+	renderErr := renderReport(rep, projectReport, deps)
+	if renderErr != nil {
+		return renderErr
 	}
 
-	client := registry.NewClient(registryURL)
+	if aiSummary && len(projectReport.Reports) > 0 {
+		renderAISummary(out, projectReport, deps)
+	}
+
+	return nil
+}
+
+func resolveDependencies(args []string) ([]project.Dependency, error) {
+	if projectPath != "" {
+		if strings.HasSuffix(projectPath, "package-lock.json") {
+			deps, err := project.ParsePackageLock(projectPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse project file: %w", err)
+			}
+			return deps, nil
+		} else if strings.HasSuffix(projectPath, "package.json") {
+			deps, err := project.ParsePackageJSON(projectPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse project file: %w", err)
+			}
+			return deps, nil
+		}
+		return nil, fmt.Errorf("invalid project path: must be package.json or package-lock.json")
+	}
+	if auditNodeModules {
+		deps, err := project.AuditNodeModules(".")
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan node_modules: %w", err)
+		}
+		return deps, nil
+	}
+	if len(args) > 0 {
+		return []project.Dependency{{Name: args[0]}}, nil
+	}
+	return nil, fmt.Errorf("package name, --project path, or --node-modules is required")
+}
+
+func resolveMinSeverity() (analyzer.Severity, error) {
+	if minSeverity == "" {
+		return 0, nil
+	}
+	return parseSeverity(minSeverity)
+}
+
+func resolveOutput() (io.Writer, func(), error) {
+	if outputFile == "" {
+		return os.Stdout, nil, nil
+	}
+	f, err := os.Create(outputFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create output file: %w", err)
+	}
+	return f, func() { f.Close() }, nil
+}
+
+func buildAnalyzers() []analyzer.Analyzer {
 	analyzers := []analyzer.Analyzer{
 		analyzer.NewVulnAnalyzer(),
 		analyzer.NewScriptsAnalyzer(),
@@ -171,14 +200,23 @@ func run(cmd *cobra.Command, args []string) error {
 	if !noSandbox {
 		analyzers = append(analyzers, analyzer.NewSandboxAnalyzer())
 	}
+	return analyzers
+}
+
+func buildProjectReport(deps []project.Dependency, sev analyzer.Severity, client *registry.Client, analyzers []analyzer.Analyzer) reporter.ProjectReport {
+	var projectReport reporter.ProjectReport
+	projectReport.ProjectName = projectPath
+	if auditNodeModules {
+		projectReport.ProjectName = "node_modules"
+	}
 
 	if concurrency < 1 {
 		concurrency = 1
 	}
 
 	var (
-		wg sync.WaitGroup
-		mu sync.Mutex
+		wg  sync.WaitGroup
+		mu  sync.Mutex
 		sem = make(chan struct{}, concurrency)
 	)
 
@@ -189,105 +227,12 @@ func run(cmd *cobra.Command, args []string) error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
-			defer cancel()
-
-			if format == "terminal" && outputFile == "" {
-				fmt.Fprintf(os.Stderr, "Auditing %s...\n", d.Name)
+			report := auditPackage(d, sev, client, analyzers)
+			if report != nil {
+				mu.Lock()
+				projectReport.Reports = append(projectReport.Reports, *report)
+				mu.Unlock()
 			}
-
-			pkg, err := client.GetPackage(ctx, d.Name)
-			if err != nil {
-				if verbose {
-					fmt.Fprintf(os.Stderr, "Skipping %s: %v\n", d.Name, err)
-				}
-				return
-			}
-
-			verName := d.Version
-			if verName == "" || strings.HasPrefix(verName, "^") || strings.HasPrefix(verName, "~") {
-				latestTag, ok := pkg.DistTags["latest"]
-				if !ok {
-					if verbose {
-						fmt.Fprintf(os.Stderr, "Skipping %s: no latest tag\n", d.Name)
-					}
-					return
-				}
-				verName = latestTag
-			}
-
-			version, ok := pkg.Versions[verName]
-			if !ok {
-				if verbose {
-					fmt.Fprintf(os.Stderr, "Skipping %s: version %s not found\n", d.Name, verName)
-				}
-				return
-			}
-
-			                                                results := analyzer.RunAll(ctx, analyzers, pkg, &version)
-
-			                                                if minSeverity != "" {
-
-			                                                        for i := range results {
-
-			                                                                results[i].Findings = analyzer.FilterByMinSeverity(results[i].Findings, sev)
-
-			                                                        }
-
-			                                                }
-
-			                        
-
-			                                                                        info := reporter.PackageInfo{
-
-			                        
-
-			                                                                                License:       version.License,
-
-			                        
-
-			                                                                                TotalVersions: len(pkg.Versions),
-
-			                        
-
-			                                                                                Dependencies:  len(version.Dependencies),
-
-			                        
-
-			                                                                                HasScripts:    hasInstallScripts(&version),
-
-			                        
-
-			                                                                        }
-			for _, m := range pkg.Maintainers {
-				info.Maintainers = append(info.Maintainers, m.Name)
-			}
-			if pkg.Repository != nil && pkg.Repository.URL != "" {
-				info.RepoURL = pkg.Repository.URL
-			}
-			if created, ok := pkg.Time["created"]; ok {
-				info.CreatedAt = created.Format("2006-01-02")
-			}
-
-			// Fetch download stats and build reputation info
-			downloads, dlErr := client.GetDownloads(ctx, d.Name)
-			if dlErr == nil && downloads != nil {
-				repInfo := reputation.Build(d.Name, downloads.Downloads)
-				info.WeeklyDownloads = repInfo.WeeklyDownloads
-				info.DownloadTier = string(repInfo.DownloadTier)
-				info.IsTrustedScope = repInfo.IsTrustedScope
-				info.TrustedScopeOrg = repInfo.TrustedScopeOrg
-				info.ReputationScore = repInfo.ReputationScore
-			}
-
-			mu.Lock()
-			projectReport.Reports = append(projectReport.Reports, reporter.Report{
-				Package: d.Name,
-				Version: verName,
-				Results: results,
-				Info:    info,
-			})
-			mu.Unlock()
 		}(dep)
 	}
 	wg.Wait()
@@ -296,43 +241,135 @@ func run(cmd *cobra.Command, args []string) error {
 		return projectReport.Reports[i].Package < projectReport.Reports[j].Package
 	})
 
-	var renderErr error
-	if len(deps) > 1 || projectPath != "" || auditNodeModules {
-		renderErr = rep.RenderProject(projectReport)
-	} else if len(projectReport.Reports) > 0 {
-		renderErr = rep.Render(projectReport.Reports[0])
+	return projectReport
+}
+
+func auditPackage(d project.Dependency, sev analyzer.Severity, client *registry.Client, analyzers []analyzer.Analyzer) *reporter.Report {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	if format == "terminal" && outputFile == "" {
+		fmt.Fprintf(os.Stderr, "Auditing %s...\n", d.Name)
 	}
 
-	if renderErr != nil {
-		return renderErr
-	}
-
-	// Generate AI summary if requested
-	if aiSummary && len(projectReport.Reports) > 0 {
-		// Generate JSON for AI analysis
-		var jsonBuf strings.Builder
-		jsonEnc := json.NewEncoder(&jsonBuf)
-		jsonEnc.SetIndent("", "  ")
-		if len(deps) > 1 || projectPath != "" || auditNodeModules {
-			jsonEnc.Encode(projectReport)
-		} else {
-			jsonEnc.Encode(projectReport.Reports[0])
+	pkg, err := client.GetPackage(ctx, d.Name)
+	if err != nil {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Skipping %s: %v\n", d.Name, err)
 		}
+		return nil
+	}
 
-		summary, err := ai.GenerateSummary([]byte(jsonBuf.String()))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "\n%sAI Summary unavailable: %s%s\n", "\033[33m", err, "\033[0m")
-		} else {
-			fmt.Fprintf(out, "\n%s╔══════════════════════════════════════════════════════════════════════╗%s\n", "\033[1;36m", "\033[0m")
-			fmt.Fprintf(out, "%s║  AI Analysis (Gemini)                                                ║%s\n", "\033[1;36m", "\033[0m")
-			fmt.Fprintf(out, "%s╚══════════════════════════════════════════════════════════════════════╝%s\n", "\033[1;36m", "\033[0m")
-			fmt.Fprintln(out)
-			fmt.Fprintln(out, summary)
-			fmt.Fprintln(out)
+	verName := resolveVersion(d, pkg)
+	if verName == "" {
+		return nil
+	}
+
+	version, ok := pkg.Versions[verName]
+	if !ok {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Skipping %s: version %s not found\n", d.Name, verName)
+		}
+		return nil
+	}
+
+	results := analyzer.RunAll(ctx, analyzers, pkg, &version)
+	if minSeverity != "" {
+		for i := range results {
+			results[i].Findings = analyzer.FilterByMinSeverity(results[i].Findings, sev)
 		}
 	}
 
+	info := buildPackageInfo(ctx, d.Name, pkg, &version, client)
+
+	return &reporter.Report{
+		Package: d.Name,
+		Version: verName,
+		Results: results,
+		Info:    info,
+	}
+}
+
+func resolveVersion(d project.Dependency, pkg *registry.PackageMetadata) string {
+	verName := d.Version
+	if verName == "" || strings.HasPrefix(verName, "^") || strings.HasPrefix(verName, "~") {
+		latestTag, ok := pkg.DistTags["latest"]
+		if !ok {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "Skipping %s: no latest tag\n", d.Name)
+			}
+			return ""
+		}
+		return latestTag
+	}
+	return verName
+}
+
+func buildPackageInfo(ctx context.Context, name string, pkg *registry.PackageMetadata, version *registry.PackageVersion, client *registry.Client) reporter.PackageInfo {
+	info := reporter.PackageInfo{
+		License:       version.License,
+		TotalVersions: len(pkg.Versions),
+		Dependencies:  len(version.Dependencies),
+		HasScripts:    hasInstallScripts(version),
+	}
+	for _, m := range pkg.Maintainers {
+		info.Maintainers = append(info.Maintainers, m.Name)
+	}
+	if pkg.Repository != nil && pkg.Repository.URL != "" {
+		info.RepoURL = pkg.Repository.URL
+	}
+	if created, ok := pkg.Time["created"]; ok {
+		info.CreatedAt = created.Format("2006-01-02")
+	}
+
+	downloads, dlErr := client.GetDownloads(ctx, name)
+	if dlErr == nil && downloads != nil {
+		repInfo := reputation.Build(name, downloads.Downloads)
+		info.WeeklyDownloads = repInfo.WeeklyDownloads
+		info.DownloadTier = string(repInfo.DownloadTier)
+		info.IsTrustedScope = repInfo.IsTrustedScope
+		info.TrustedScopeOrg = repInfo.TrustedScopeOrg
+		info.ReputationScore = repInfo.ReputationScore
+	}
+
+	return info
+}
+
+func isMultiPackageAudit(deps []project.Dependency) bool {
+	return len(deps) > 1 || projectPath != "" || auditNodeModules
+}
+
+func renderReport(rep *reporter.Reporter, projectReport reporter.ProjectReport, deps []project.Dependency) error {
+	if isMultiPackageAudit(deps) {
+		return rep.RenderProject(projectReport)
+	}
+	if len(projectReport.Reports) > 0 {
+		return rep.Render(projectReport.Reports[0])
+	}
 	return nil
+}
+
+func renderAISummary(out io.Writer, projectReport reporter.ProjectReport, deps []project.Dependency) {
+	var jsonBuf strings.Builder
+	jsonEnc := json.NewEncoder(&jsonBuf)
+	jsonEnc.SetIndent("", "  ")
+	if isMultiPackageAudit(deps) {
+		jsonEnc.Encode(projectReport)
+	} else {
+		jsonEnc.Encode(projectReport.Reports[0])
+	}
+
+	summary, err := ai.GenerateSummary([]byte(jsonBuf.String()))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\n%sAI Summary unavailable: %s%s\n", "\033[33m", err, "\033[0m")
+	} else {
+		fmt.Fprintf(out, "\n%s╔══════════════════════════════════════════════════════════════════════╗%s\n", "\033[1;36m", "\033[0m")
+		fmt.Fprintf(out, "%s║  AI Analysis (Gemini)                                                ║%s\n", "\033[1;36m", "\033[0m")
+		fmt.Fprintf(out, "%s╚══════════════════════════════════════════════════════════════════════╝%s\n", "\033[1;36m", "\033[0m")
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, summary)
+		fmt.Fprintln(out)
+	}
 }
 func hasInstallScripts(v *registry.PackageVersion) bool {
 	if v.HasInstallScript {
