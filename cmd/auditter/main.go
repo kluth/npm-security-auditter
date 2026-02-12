@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/kluth/npm-security-auditter/internal/reporter"
 	"github.com/kluth/npm-security-auditter/internal/reputation"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -35,6 +38,9 @@ var (
 	concurrency      int
 	noSandbox        bool
 	verbose          bool
+	quiet            bool
+	failOn           string
+	listAnalyzers    bool
 	aiSummary        bool
 )
 
@@ -53,7 +59,7 @@ func main() {
   auditter express --json --output report.json
   auditter --project package.json --severity high
   auditter --node-modules --format html --output audit.html`,
-		Version: "2.1.0",
+		Version: "2.2.0",
 		RunE:    run,
 	}
 
@@ -70,36 +76,66 @@ func main() {
 	rootCmd.Flags().IntVarP(&concurrency, "concurrency", "c", 5, "max number of concurrent package audits")
 	rootCmd.Flags().BoolVar(&noSandbox, "no-sandbox", false, "disable dynamic analysis in sandbox")
 	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output (show all individual findings)")
+	rootCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "suppress progress messages to stderr")
+	rootCmd.Flags().StringVar(&failOn, "fail-on", "", "exit with code 2 if any finding meets/exceeds severity (low, medium, high, critical)")
+	rootCmd.Flags().BoolVar(&listAnalyzers, "list-analyzers", false, "list all available analyzers and exit")
 	rootCmd.Flags().BoolVar(&aiSummary, "ai-summary", false, "generate AI analysis via Gemini CLI")
 
 	if err := rootCmd.Execute(); err != nil {
+		if exitErr, ok := err.(*ExitError); ok {
+			fmt.Fprintln(os.Stderr, exitErr.Message)
+			os.Exit(exitErr.Code)
+		}
 		os.Exit(1)
 	}
 }
 
-func run(cmd *cobra.Command, args []string) error {
-	if interactive {
-		p := tea.NewProgram(initialModel())
-		if _, err := p.Run(); err != nil {
-			return fmt.Errorf("error running TUI: %w", err)
-		}
-		return nil
-	}
+// ExitError signals a non-standard exit code (e.g., 2 for --fail-on).
+type ExitError struct {
+	Code    int
+	Message string
+}
 
+func (e *ExitError) Error() string { return e.Message }
+
+func stderrPrintf(format string, a ...interface{}) {
+	if !quiet {
+		fmt.Fprintf(os.Stderr, format, a...)
+	}
+}
+
+func loadConfiguration(cmd *cobra.Command) error {
+	if cfgPath := findConfigFile(); cfgPath != "" {
+		cfg, err := loadConfigFile(cfgPath)
+		if err != nil {
+			return err
+		}
+		applyConfig(cfg)
+	}
+	resolveConfig(cmd)
+	if quiet && verbose {
+		return fmt.Errorf("--quiet and --verbose are mutually exclusive")
+	}
+	if failOn != "" {
+		if _, err := parseSeverity(failOn); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func runAudit(args []string) error {
 	deps, err := resolveDependencies(args)
 	if err != nil {
 		return err
 	}
-
 	if jsonOutput {
 		format = "json"
 	}
-
 	sev, err := resolveMinSeverity()
 	if err != nil {
 		return err
 	}
-
 	out, cleanup, err := resolveOutput()
 	if err != nil {
 		return err
@@ -111,16 +147,34 @@ func run(cmd *cobra.Command, args []string) error {
 	rep := reporter.NewWithOptions(out, format, reporter.Language(lang), verbose)
 	projectReport := buildProjectReport(deps, sev, registry.NewClient(registryURL), buildAnalyzers())
 
-	renderErr := renderReport(rep, projectReport, deps)
-	if renderErr != nil {
-		return renderErr
+	if err := renderReport(rep, projectReport, deps); err != nil {
+		return err
 	}
-
 	if aiSummary && len(projectReport.Reports) > 0 {
 		renderAISummary(out, projectReport, deps)
 	}
-
+	if failOn != "" {
+		return checkFailOn(projectReport, failOn)
+	}
 	return nil
+}
+
+func run(cmd *cobra.Command, args []string) error {
+	if err := loadConfiguration(cmd); err != nil {
+		return err
+	}
+	if listAnalyzers {
+		printAnalyzerList(os.Stdout)
+		return nil
+	}
+	if interactive {
+		p := tea.NewProgram(initialModel())
+		if _, err := p.Run(); err != nil {
+			return fmt.Errorf("error running TUI: %w", err)
+		}
+		return nil
+	}
+	return runAudit(args)
 }
 
 func resolveDependencies(args []string) ([]project.Dependency, error) {
@@ -249,13 +303,13 @@ func auditPackage(d project.Dependency, sev analyzer.Severity, client *registry.
 	defer cancel()
 
 	if format == "terminal" && outputFile == "" {
-		fmt.Fprintf(os.Stderr, "Auditing %s...\n", d.Name)
+		stderrPrintf("Auditing %s...\n", d.Name)
 	}
 
 	pkg, err := client.GetPackage(ctx, d.Name)
 	if err != nil {
 		if verbose {
-			fmt.Fprintf(os.Stderr, "Skipping %s: %v\n", d.Name, err)
+			stderrPrintf("Skipping %s: %v\n", d.Name, err)
 		}
 		return nil
 	}
@@ -268,7 +322,7 @@ func auditPackage(d project.Dependency, sev analyzer.Severity, client *registry.
 	version, ok := pkg.Versions[verName]
 	if !ok {
 		if verbose {
-			fmt.Fprintf(os.Stderr, "Skipping %s: version %s not found\n", d.Name, verName)
+			stderrPrintf("Skipping %s: version %s not found\n", d.Name, verName)
 		}
 		return nil
 	}
@@ -296,7 +350,7 @@ func resolveVersion(d project.Dependency, pkg *registry.PackageMetadata) string 
 		latestTag, ok := pkg.DistTags["latest"]
 		if !ok {
 			if verbose {
-				fmt.Fprintf(os.Stderr, "Skipping %s: no latest tag\n", d.Name)
+				stderrPrintf("Skipping %s: no latest tag\n", d.Name)
 			}
 			return ""
 		}
@@ -386,6 +440,132 @@ func hasInstallScripts(v *registry.PackageVersion) bool {
 	return false
 }
 
+func flagChanged(cmd *cobra.Command, name string) bool {
+	if cmd == nil {
+		return false
+	}
+	f := cmd.Flags().Lookup(name)
+	return f != nil && f.Changed
+}
+
+func resolveStringEnv(cmd *cobra.Command, flagName, envKey string, target *string) {
+	if flagChanged(cmd, flagName) {
+		return
+	}
+	if v := os.Getenv(envKey); v != "" {
+		*target = v
+	}
+}
+
+func resolveIntEnv(cmd *cobra.Command, flagName, envKey string, target *int) {
+	if flagChanged(cmd, flagName) {
+		return
+	}
+	if v := os.Getenv(envKey); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			*target = n
+		}
+	}
+}
+
+func resolveBoolEnv(cmd *cobra.Command, flagName, envKey string, target *bool) {
+	if flagChanged(cmd, flagName) {
+		return
+	}
+	if v := os.Getenv(envKey); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			*target = b
+		}
+	}
+}
+
+type configFile struct {
+	Registry    string `yaml:"registry"`
+	Format      string `yaml:"format"`
+	Lang        string `yaml:"lang"`
+	Severity    string `yaml:"severity"`
+	FailOn      string `yaml:"fail-on"`
+	Timeout     int    `yaml:"timeout"`
+	Concurrency int    `yaml:"concurrency"`
+	NoSandbox   bool   `yaml:"no-sandbox"`
+	Quiet       bool   `yaml:"quiet"`
+}
+
+func loadConfigFile(path string) (*configFile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var cfg configFile
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("invalid config file %s: %w", path, err)
+	}
+	return &cfg, nil
+}
+
+func findConfigFile() string {
+	if _, err := os.Stat(".auditter.yaml"); err == nil {
+		return ".auditter.yaml"
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	p := filepath.Join(home, ".config", "auditter", "config.yaml")
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
+	return ""
+}
+
+func applyConfig(cfg *configFile) {
+	if cfg == nil {
+		return
+	}
+	if cfg.Registry != "" {
+		registryURL = cfg.Registry
+	}
+	if cfg.Format != "" {
+		format = cfg.Format
+	}
+	if cfg.Lang != "" {
+		lang = cfg.Lang
+	}
+	if cfg.Severity != "" {
+		minSeverity = cfg.Severity
+	}
+	if cfg.FailOn != "" {
+		failOn = cfg.FailOn
+	}
+	if cfg.Timeout != 0 {
+		timeout = cfg.Timeout
+	}
+	if cfg.Concurrency != 0 {
+		concurrency = cfg.Concurrency
+	}
+	if cfg.NoSandbox {
+		noSandbox = true
+	}
+	if cfg.Quiet {
+		quiet = true
+	}
+}
+
+func resolveConfig(cmd *cobra.Command) {
+	resolveStringEnv(cmd, "registry", "AUDITTER_REGISTRY", &registryURL)
+	resolveStringEnv(cmd, "format", "AUDITTER_FORMAT", &format)
+	resolveStringEnv(cmd, "lang", "AUDITTER_LANG", &lang)
+	resolveStringEnv(cmd, "severity", "AUDITTER_SEVERITY", &minSeverity)
+	resolveStringEnv(cmd, "fail-on", "AUDITTER_FAIL_ON", &failOn)
+	resolveIntEnv(cmd, "timeout", "AUDITTER_TIMEOUT", &timeout)
+	resolveIntEnv(cmd, "concurrency", "AUDITTER_CONCURRENCY", &concurrency)
+	resolveBoolEnv(cmd, "no-sandbox", "AUDITTER_NO_SANDBOX", &noSandbox)
+	resolveBoolEnv(cmd, "quiet", "AUDITTER_QUIET", &quiet)
+}
+
 func parseSeverity(s string) (analyzer.Severity, error) {
 	switch s {
 	case "low":
@@ -399,4 +579,99 @@ func parseSeverity(s string) (analyzer.Severity, error) {
 	default:
 		return 0, fmt.Errorf("invalid severity %q: must be low, medium, high, or critical", s)
 	}
+}
+
+func checkFailOn(pr reporter.ProjectReport, threshold string) error {
+	sev, _ := parseSeverity(threshold) // already validated
+	for _, report := range pr.Reports {
+		for _, result := range report.Results {
+			for _, f := range result.Findings {
+				if f.Severity >= sev {
+					return &ExitError{
+						Code:    2,
+						Message: fmt.Sprintf("findings at or above %q severity detected", threshold),
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// AnalyzerInfo describes a registered analyzer for --list-analyzers output.
+type AnalyzerInfo struct {
+	Name        string
+	Category    string
+	Description string
+}
+
+func analyzerRegistry() []AnalyzerInfo {
+	return []AnalyzerInfo{
+		{"vulnerabilities", "Supply Chain", "Check for known CVEs and security advisories"},
+		{"install-scripts", "Supply Chain", "Detect suspicious install lifecycle scripts"},
+		{"typosquatting", "Supply Chain", "Detect package name typosquatting attacks"},
+		{"slopsquatting", "Supply Chain", "Detect LLM-hallucinated package names"},
+		{"maintainers", "Supply Chain", "Analyze maintainer trust signals"},
+		{"metadata", "Supply Chain", "Check package metadata for anomalies"},
+		{"dependencies", "Supply Chain", "Analyze dependency tree for risks"},
+		{"remote-dependencies", "Supply Chain", "Detect HTTP URL and git dependencies"},
+		{"binary-analysis", "Code Analysis", "Detect binary/compiled code in packages"},
+		{"provenance", "Build Integrity", "Verify SLSA provenance attestations"},
+		{"tarball-analysis", "Code Analysis", "Deep scan tarball contents for threats"},
+		{"repo-verification", "Supply Chain", "Verify repository URL authenticity"},
+		{"repository-issues", "Supply Chain", "Analyze GitHub issues for security reports"},
+		{"dangerous-shell-scripts", "Code Analysis", "Analyze shell scripts for dangerous commands"},
+		{"ossf-scorecard", "Supply Chain", "OpenSSF Scorecard-style security checks"},
+		{"commit-history", "Supply Chain", "Analyze git commit patterns for risks"},
+		{"download-patterns", "Supply Chain", "Analyze download patterns for anomalies"},
+		{"manifest-confusion", "Supply Chain", "Detect manifest vs tarball mismatches"},
+		{"version-anomalies", "Supply Chain", "Detect suspicious version publish patterns"},
+		{"starjacking", "Supply Chain", "Detect repository star-jacking attacks"},
+		{"community-trust", "Supply Chain", "Evaluate open source community signals"},
+		{"reproducible-build", "Build Integrity", "Verify build reproducibility"},
+		{"code-signing", "Build Integrity", "Verify code signing and integrity"},
+		{"dynamic-analysis", "Runtime Analysis", "Dynamic analysis in isolated sandbox"},
+		{"ast-analysis", "Code Analysis", "Deep JavaScript AST-based analysis"},
+		{"taint-analysis", "Code Analysis", "Data flow taint tracking analysis"},
+		{"env-fingerprinting", "Malware Detection", "Detect CI/CD and environment fingerprinting"},
+		{"multilayer-obfuscation", "Malware Detection", "Detect nested obfuscation techniques"},
+		{"anti-debug", "Malware Detection", "Detect anti-debugging techniques"},
+		{"phantom-deps", "Supply Chain", "Detect undeclared phantom dependencies"},
+		{"timebomb", "Malware Detection", "Detect time-based payload activation"},
+		{"crypto-theft", "Malware Detection", "Detect cryptocurrency theft patterns"},
+		{"multistage-loader", "Malware Detection", "Detect multi-stage payload loaders"},
+		{"proto-pollution", "Code Analysis", "Detect prototype pollution patterns"},
+		{"worm", "Malware Detection", "Detect self-propagating worm behavior"},
+		{"phishing", "Malware Detection", "Detect credential phishing techniques"},
+		{"side-effects", "Code Analysis", "Detect unexpected module side effects"},
+		{"telemetry", "Code Analysis", "Detect hidden telemetry and tracking"},
+		{"environment-variables", "Malware Detection", "Detect environment variable exfiltration"},
+		{"network-security", "Runtime Analysis", "Analyze network communication patterns"},
+		{"dangerous-extensions", "Code Analysis", "Detect dangerous file extensions in packages"},
+		{"suspicious-urls", "Code Analysis", "Detect suspicious URL patterns in code"},
+		{"exfiltration-endpoints", "Malware Detection", "Detect data exfiltration attempts"},
+		{"behavior-sequence", "Runtime Analysis", "Behavioral sequence analysis of execution"},
+		{"lockfile-analysis", "Supply Chain", "Analyze lockfile integrity and consistency"},
+		{"ai-evasion", "Malware Detection", "Detect AI/ML evasion techniques"},
+		{"minified-only", "Code Analysis", "Detect packages with only minified code"},
+	}
+}
+
+func printAnalyzerList(w io.Writer) {
+	infos := analyzerRegistry()
+	nameW, catW := 0, 0
+	for _, info := range infos {
+		if len(info.Name) > nameW {
+			nameW = len(info.Name)
+		}
+		if len(info.Category) > catW {
+			catW = len(info.Category)
+		}
+	}
+	fmt.Fprintf(w, "%-*s  %-*s  %s\n", nameW, "ANALYZER", catW, "CATEGORY", "DESCRIPTION")
+	fmt.Fprintf(w, "%-*s  %-*s  %s\n", nameW, strings.Repeat("-", nameW), catW, strings.Repeat("-", catW), strings.Repeat("-", 40))
+	for _, info := range infos {
+		fmt.Fprintf(w, "%-*s  %-*s  %s\n", nameW, info.Name, catW, info.Category, info.Description)
+	}
+	fmt.Fprintf(w, "\nTotal: %d analyzers\n", len(infos))
 }
