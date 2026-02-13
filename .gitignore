@@ -1,4 +1,5 @@
 /auditter
+/dist/
 *.exe
 node_modules/
 *.out
