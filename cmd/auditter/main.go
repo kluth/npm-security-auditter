@@ -26,6 +26,12 @@ import (
 )
 
 var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
+var (
 	registryURL      string
 	jsonOutput       bool
 	format           string
@@ -60,7 +66,7 @@ func main() {
   auditter express --json --output report.json
   auditter --project package.json --severity high
   auditter --node-modules --format html --output audit.html`,
-		Version: "2.3.0",
+		Version: version,
 		Args:    cobra.ArbitraryArgs,
 		RunE:    run,
 	}
