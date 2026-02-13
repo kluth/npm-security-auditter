@@ -179,7 +179,7 @@ var behaviorPatterns = []behaviorPattern{
 		Name:        "Browser data theft",
 		Description: "Accesses browser profiles, cookies, or saved passwords",
 		Indicators: []string{
-			`(Chrome|Firefox|Safari|\.mozilla|\.config/google-chrome|Cookies|Login\s*Data)`,
+			`(\.mozilla/firefox|google-chrome/Default|Library/Application\s+Support/Google/Chrome|Cookies|Login\s*Data)`,
 			`(fs\.read|readFileSync|sqlite|level)`,
 		},
 		Severity: SeverityCritical,
@@ -207,17 +207,21 @@ var behaviorPatterns = []behaviorPattern{
 func (a *BehaviorSequenceAnalyzer) scanContent(content, filename string) []Finding {
 	var findings []Finding
 
+	// Strip comments to avoid false positives from documentation/licenses
+	strippedContent := StripComments(content)
+
 	for _, pattern := range behaviorPatterns {
 		allPresent := true
 		matchedIndicators := []string{}
 
+		// Use stripped content for pattern matching
 		for _, indicator := range pattern.Indicators {
 			re := regexp.MustCompile(indicator)
-			if !re.MatchString(content) {
+			if !re.MatchString(strippedContent) {
 				allPresent = false
 				break
 			}
-			matches := re.FindAllString(content, 2)
+			matches := re.FindAllString(strippedContent, 2)
 			if len(matches) > 0 {
 				matchedIndicators = append(matchedIndicators, matches[0])
 			}
@@ -236,8 +240,8 @@ func (a *BehaviorSequenceAnalyzer) scanContent(content, filename string) []Findi
 		}
 	}
 
-	// Check for rapid sequential suspicious calls
-	findings = append(findings, a.detectRapidSequence(content, filename)...)
+	// Check for rapid sequential suspicious calls - use stripped content to preserve line numbers accurately
+	findings = append(findings, a.detectRapidSequence(strippedContent, filename)...)
 
 	return findings
 }

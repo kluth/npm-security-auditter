@@ -17,7 +17,7 @@
 
 ---
 
-**40+ security analyzers** | **6 output formats** | **12 languages** | **Behavioral sandbox** | **AI summaries**
+**40+ security analyzers** | **6 output formats** | **12 languages** | **Behavioral sandbox** | **AI summaries** | **25+ Intel Sources**
 
 </div>
 
@@ -34,6 +34,14 @@
 - Packages that steal your `.npmrc` tokens and publish worms under your name
 
 **auditter** catches these. It performs deep forensic analysis of tarball contents, code patterns, metadata anomalies, and runtime behavior to detect zero-day supply chain threats.
+
+### Refined Forensic Analysis
+
+To minimize noise in large, legitimate utility libraries (like `lodash`), auditter employs several advanced filtering techniques:
+
+- **Smart Comment Stripping:** Automatically strips JS/TS comments before analysis while preserving line numbers for accurate reporting.
+- **Behavioral Proximity Correlation:** Only flags suspicious patterns (e.g., a network fetch followed by code execution) if they occur within a close proximity (20 lines), reducing false positives from unrelated code blocks.
+- **Context-Aware Path Detection:** Targeted detection of sensitive file access (e.g., browser profiles) uses specific path signatures rather than generic keywords.
 
 ---
 
@@ -105,6 +113,9 @@ auditter lodash -s high --json
 
 # Full project audit with PDF report and AI summary
 auditter -p package-lock.json --format pdf -o report.pdf --ai-summary
+
+# Update threat intelligence from online sources
+auditter update-intel
 ```
 
 ---
@@ -133,6 +144,43 @@ auditter <package-name> [flags]
 | `--registry` | `-r` | Custom npm registry URL | npmjs.org |
 | `--output` | `-o` | Write report to file | stdout |
 | `--verbose` | `-v` | Show all individual findings | `false` |
+
+### Configuration
+
+auditter can be configured via environment variables or a YAML configuration file.
+
+**Config file locations:**
+1. `.auditter.yaml` in the current directory
+2. `~/.config/auditter/config.yaml`
+
+See [.auditter.yaml.example](.auditter.yaml.example) for a full list of options.
+
+**Environment variables:**
+All flags can be set via environment variables prefixed with `AUDITTER_`:
+- `AUDITTER_REGISTRY`
+- `AUDITTER_FORMAT`
+- `AUDITTER_SEVERITY`
+- `AUDITTER_FAIL_ON`
+- etc.
+
+### Threat Intelligence
+
+auditter is a self-extending forensic tool that aggregates security intelligence from over **25 external sources**, including vulnerability databases, malware feeds, and security research labs.
+
+**Key intelligence sources:**
+- **Vulnerability DBs:** OSV, NIST NVD, CVE MITRE
+- **Malware Feeds:** Phylum Research, URLhaus (Abuse.ch), Socket.dev
+- **Research Labs:** Chaos Computer Club (CCC), GitHub Security Lab, Google Open Source Security, OpenSSF, Wiz.io, Checkmarx, Snyk Security, Mandiant, Palo Alto Unit 42, CISA
+- **Academic/Conferences:** USENIX Security, Black Hat News, DEF CON Media
+- **Community:** Krebs on Security, The Hacker News, Dark Reading
+
+**Automatic Extension:**
+The tool automatically checks the age of its local intelligence cache (`~/.cache/auditter/intelligence.json`) on every run. If the data is older than **24 hours**, it triggers a resilient background update from all configured sources.
+
+**Manual Update:**
+```bash
+auditter update-intel
+```
 
 ### Languages
 

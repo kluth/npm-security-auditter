@@ -2,6 +2,8 @@ package analyzer
 
 import (
 	"context"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/kluth/npm-security-auditter/internal/registry"
@@ -86,4 +88,33 @@ func FilterByMinSeverity(findings []Finding, minSeverity Severity) []Finding {
 		}
 	}
 	return filtered
+}
+
+var (
+	singleLineComment = regexp.MustCompile(`(?m)(^|\s)//.*`)
+	multiLineComment  = regexp.MustCompile(`(?s)/\*.*?\*/`)
+)
+
+// StripComments removes both single-line and multi-line comments from JavaScript/TypeScript code
+// while preserving line numbers by replacing comment characters with spaces.
+func StripComments(content string) string {
+	// Remove multi-line comments preserving newlines
+	content = multiLineComment.ReplaceAllStringFunc(content, func(s string) string {
+		var res strings.Builder
+		for _, r := range s {
+			if r == '\n' {
+				res.WriteRune('\n')
+			} else {
+				res.WriteRune(' ')
+			}
+		}
+		return res.String()
+	})
+
+	// Remove single-line comments preserving newlines
+	content = singleLineComment.ReplaceAllStringFunc(content, func(s string) string {
+		return strings.Repeat(" ", len(s))
+	})
+
+	return content
 }

@@ -1,0 +1,30 @@
+# auditter configuration file
+# This file can be placed in the current directory as .auditter.yaml
+# or in ~/.config/auditter/config.yaml
+
+# npm registry URL
+registry: "https://registry.npmjs.org"
+
+# Output format: terminal, json, markdown, html, csv, pdf
+format: "terminal"
+
+# Report language: en, de, fr, es, it, pt, jp, zh, ru, tlh, vul, sin
+lang: "en"
+
+# Minimum severity to report: low, medium, high, critical
+severity: "low"
+
+# Exit with code 2 if any finding meets/exceeds this severity
+# fail-on: "high"
+
+# Timeout in seconds for each package audit
+timeout: 180
+
+# Max number of concurrent package audits
+concurrency: 5
+
+# Disable dynamic analysis in sandbox (Linux only)
+no-sandbox: false
+
+# Suppress progress messages to stderr
+quiet: false

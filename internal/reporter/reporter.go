@@ -787,6 +787,18 @@ func matchActionRule(f analyzer.Finding) (key, actionKey string, isCritical bool
 		if f.Severity >= analyzer.SeverityHigh {
 			return "dynamic", "action_sandbox_detected", true
 		}
+	case "proto-pollution":
+		if f.Severity >= analyzer.SeverityHigh {
+			return "proto", "action_verify_proto", true
+		}
+	case "behavior-sequence":
+		if f.Severity >= analyzer.SeverityHigh {
+			return "behavior", "action_verify_behavior", true
+		}
+	case "multistage-loader":
+		if f.Severity >= analyzer.SeverityHigh {
+			return "loader", "action_verify_loader", true
+		}
 	}
 	return "", "", false
 }

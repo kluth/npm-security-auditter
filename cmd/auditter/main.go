@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kluth/npm-security-auditter/internal/ai"
 	"github.com/kluth/npm-security-auditter/internal/analyzer"
+	"github.com/kluth/npm-security-auditter/internal/intelligence"
 	"github.com/kluth/npm-security-auditter/internal/project"
 	"github.com/kluth/npm-security-auditter/internal/registry"
 	"github.com/kluth/npm-security-auditter/internal/reporter"
@@ -46,7 +47,7 @@ var (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:   "auditter <package-name>",
+		Use:   "auditter [package-name]",
 		Short: "Audit npm packages for security risks",
 		Long: `auditter performs a comprehensive security audit of npm packages.
 		
@@ -60,8 +61,26 @@ func main() {
   auditter --project package.json --severity high
   auditter --node-modules --format html --output audit.html`,
 		Version: "2.3.0",
+		Args:    cobra.ArbitraryArgs,
 		RunE:    run,
 	}
+
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "update-intel",
+		Short: "Poll online sources for new security intelligence",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			m := intelligence.NewManager("")
+			m.AddProvider(intelligence.NewGitHubProvider(""))
+			m.AddProvider(intelligence.NewGitHubAdvisoryProvider())
+			m.AddProvider(intelligence.NewUnifiedIntelProvider())
+			fmt.Println("Updating threat intelligence from online sources...")
+			if err := m.Update(context.Background()); err != nil {
+				return err
+			}
+			fmt.Println("Threat intelligence updated successfully.")
+			return nil
+		},
+	})
 
 	rootCmd.Flags().StringVarP(&registryURL, "registry", "r", "", "npm registry URL (default: https://registry.npmjs.org)")
 	rootCmd.Flags().BoolVar(&jsonOutput, "json", false, "output results as JSON (alias for --format json)")
@@ -144,8 +163,19 @@ func runAudit(args []string) error {
 		defer cleanup()
 	}
 
+	intelMgr := intelligence.NewManager("")
+	if err := intelMgr.Load(); err != nil {
+		stderrPrintf("Warning: failed to load threat intelligence: %v\n", err)
+	}
+
+	// Auto-update if data is older than 24 hours
+	intelMgr.AddProvider(intelligence.NewGitHubProvider(""))
+	intelMgr.AddProvider(intelligence.NewGitHubAdvisoryProvider())
+	intelMgr.AddProvider(intelligence.NewUnifiedIntelProvider())
+	intelMgr.AutoUpdate(context.Background(), 24*time.Hour)
+
 	rep := reporter.NewWithOptions(out, format, reporter.Language(lang), verbose)
-	projectReport := buildProjectReport(deps, sev, registry.NewClient(registryURL), buildAnalyzers())
+	projectReport := buildProjectReport(deps, sev, registry.NewClient(registryURL), buildAnalyzers(intelMgr))
 
 	if err := renderReport(rep, projectReport, deps); err != nil {
 		return err
@@ -225,9 +255,10 @@ func resolveOutput() (io.Writer, func(), error) {
 	return f, func() { f.Close() }, nil
 }
 
-func buildAnalyzers() []analyzer.Analyzer {
+func buildAnalyzers(intelMgr *intelligence.Manager) []analyzer.Analyzer {
 	analyzers := []analyzer.Analyzer{
 		analyzer.NewVulnAnalyzer(),
+		analyzer.NewIntelAnalyzer(intelMgr),
 		analyzer.NewScriptsAnalyzer(),
 		analyzer.NewTyposquatAnalyzer(),
 		analyzer.NewSlopsquattingAnalyzer(),

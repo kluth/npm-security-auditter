@@ -108,6 +108,9 @@ var translations = map[Language]map[string]string{
 		"action_verify_provenance":  "Verify build provenance and supply chain",
 		"action_verify_maintainer":  "Verify maintainer identity and account status",
 		"action_sandbox_detected":   "Review sandbox-detected runtime behaviors",
+		"action_verify_proto":       "Review code for prototype pollution vulnerabilities",
+		"action_verify_behavior":    "Verify suspicious behavior sequences",
+		"action_verify_loader":      "Investigate multi-stage payload loading",
 		"action_use_ignore_scripts": "Consider using --ignore-scripts flag",
 		"action_safe_to_install":    "Package appears safe to install",
 		// Remediation action groups
@@ -257,6 +260,9 @@ var translations = map[Language]map[string]string{
 		"action_verify_provenance":  "Build-Herkunft und Lieferkette verifizieren",
 		"action_verify_maintainer":  "Maintainer-Identität und Kontostatus prüfen",
 		"action_sandbox_detected":   "Sandbox-erkannte Laufzeitverhaltens prüfen",
+		"action_verify_proto":       "Code auf Prototype-Pollution-Schwachstellen prüfen",
+		"action_verify_behavior":    "Verdächtige Verhaltenssequenzen überprüfen",
+		"action_verify_loader":      "Mehrstufiges Laden von Payloads untersuchen",
 		"action_use_ignore_scripts": "Erwägen Sie die Verwendung des --ignore-scripts Flags",
 		"action_safe_to_install":    "Paket scheint sicher zur Installation",
 		// Remediation action groups

