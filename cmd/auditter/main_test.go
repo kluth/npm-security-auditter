@@ -845,8 +845,8 @@ func TestExitErrorInterface(t *testing.T) {
 
 func TestAnalyzerRegistryCount(t *testing.T) {
 	infos := analyzerRegistry()
-	if len(infos) != 47 {
-		t.Errorf("expected 47 analyzers in registry, got %d", len(infos))
+	if len(infos) != 57 {
+		t.Errorf("expected 57 analyzers in registry, got %d", len(infos))
 	}
 }
 
@@ -896,8 +896,8 @@ func TestPrintAnalyzerListOutput(t *testing.T) {
 	if !strings.Contains(output, "DESCRIPTION") {
 		t.Error("output should contain header 'DESCRIPTION'")
 	}
-	if !strings.Contains(output, "Total: 47 analyzers") {
-		t.Errorf("output should contain 'Total: 47 analyzers', got: %s", output[strings.LastIndex(output, "Total"):])
+	if !strings.Contains(output, "Total: 57 analyzers") {
+		t.Errorf("output should contain 'Total: 57 analyzers', got: %s", output[strings.LastIndex(output, "Total"):])
 	}
 	if !strings.Contains(output, "vulnerabilities") {
 		t.Error("output should contain 'vulnerabilities' analyzer")

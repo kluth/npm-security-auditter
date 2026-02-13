@@ -59,7 +59,7 @@ func main() {
   auditter express --json --output report.json
   auditter --project package.json --severity high
   auditter --node-modules --format html --output audit.html`,
-		Version: "2.2.0",
+		Version: "2.3.0",
 		RunE:    run,
 	}
 
@@ -654,6 +654,16 @@ func analyzerRegistry() []AnalyzerInfo {
 		{"lockfile-analysis", "Supply Chain", "Analyze lockfile integrity and consistency"},
 		{"ai-evasion", "Malware Detection", "Detect AI/ML evasion techniques"},
 		{"minified-only", "Code Analysis", "Detect packages with only minified code"},
+		{"unicode-steganography", "Malware Detection", "Detect hidden payloads via Unicode variation selectors"},
+		{"persistence-mechanisms", "Malware Detection", "Detect crontab, shell profile, systemd, git hook persistence"},
+		{"reverse-shell", "Malware Detection", "Detect reverse shell establishment patterns"},
+		{"blockchain-c2", "Malware Detection", "Detect blockchain-based C2 infrastructure"},
+		{"ai-weaponization", "Malware Detection", "Detect AI CLI tool weaponization (s1ngularity)"},
+		{"dead-mans-switch", "Malware Detection", "Detect conditional destruction payloads"},
+		{"ci-backdoor", "Malware Detection", "Detect CI/CD pipeline backdoor injection"},
+		{"socks-proxy", "Malware Detection", "Detect SOCKS proxy and network tunneling setup"},
+		{"wasm-payload", "Malware Detection", "Detect WebAssembly-based payload delivery"},
+		{"cryptominer", "Malware Detection", "Detect cryptocurrency mining software"},
 	}
 }
 

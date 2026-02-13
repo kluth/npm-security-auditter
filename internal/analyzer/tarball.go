@@ -225,6 +225,16 @@ func (a *TarballAnalyzer) scanJSFiles(ep *tarball.ExtractedPackage) []Finding {
 	protoA := NewProtoPollutionAnalyzer()
 	wormA := NewWormAnalyzer()
 	phishA := NewPhishingAnalyzer()
+	unicodeStegA := NewUnicodeSteganographyAnalyzer()
+	persistA := NewPersistenceAnalyzer()
+	revShellA := NewReverseShellAnalyzer()
+	blockchainA := NewBlockchainC2Analyzer()
+	aiWeaponA := NewAIWeaponizationAnalyzer()
+	deadMansA := NewDeadMansSwitchAnalyzer()
+	ciBackdoorA := NewCIBackdoorAnalyzer()
+	socksA := NewSocksProxyAnalyzer()
+	wasmA := NewWasmPayloadAnalyzer()
+	cryptominerA := NewCryptominerAnalyzer()
 
 	// Extract declared dependencies for phantom dep detection
 	var declaredDeps map[string]string
@@ -296,6 +306,26 @@ func (a *TarballAnalyzer) scanJSFiles(ep *tarball.ExtractedPackage) []Finding {
 		findings = append(findings, wormA.scanContent(content, f.Path)...)
 		// Phishing infrastructure
 		findings = append(findings, phishA.scanContent(content, f.Path)...)
+		// Unicode steganography
+		findings = append(findings, unicodeStegA.scanContent(content, f.Path)...)
+		// Persistence mechanisms
+		findings = append(findings, persistA.scanContent(content, f.Path)...)
+		// Reverse shell
+		findings = append(findings, revShellA.scanContent(content, f.Path)...)
+		// Blockchain C2
+		findings = append(findings, blockchainA.scanContent(content, f.Path)...)
+		// AI tool weaponization
+		findings = append(findings, aiWeaponA.scanContent(content, f.Path)...)
+		// Dead man's switch
+		findings = append(findings, deadMansA.scanContent(content, f.Path)...)
+		// CI/CD backdoor
+		findings = append(findings, ciBackdoorA.scanContent(content, f.Path)...)
+		// SOCKS proxy / tunneling
+		findings = append(findings, socksA.scanContent(content, f.Path)...)
+		// WASM payload
+		findings = append(findings, wasmA.scanContent(content, f.Path)...)
+		// Cryptominer
+		findings = append(findings, cryptominerA.scanContent(content, f.Path)...)
 
 		for _, pat := range maliciousJSPatterns {
 			if pat.Pattern.Match(contentBytes) {

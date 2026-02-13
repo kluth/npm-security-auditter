@@ -203,6 +203,7 @@ var binaryMagicBytes = []binaryMagic{
 	{Name: "Mach-O binary (32-bit)", Magic: []byte{0xfe, 0xed, 0xfa, 0xce}},
 	{Name: "Mach-O binary (64-bit)", Magic: []byte{0xfe, 0xed, 0xfa, 0xcf}},
 	{Name: "Mach-O binary (universal)", Magic: []byte{0xca, 0xfe, 0xba, 0xbe}},
+	{Name: "WebAssembly module", Magic: []byte{0x00, 0x61, 0x73, 0x6d}},
 }
 
 // hiddenFileNames are files that should not normally be in an npm package.
