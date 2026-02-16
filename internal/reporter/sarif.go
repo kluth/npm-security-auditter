@@ -105,15 +105,8 @@ func (r *Reporter) renderSARIF(report Report) error {
 				ShortDescription: sarifMessage{Text: f.Title},
 				FullDescription: sarifMessage{Text: f.Description},
 				Help: sarifMessage{
-					Text: fmt.Sprintf("%s
-
-Remediation: %s", f.Description, f.Remediation),
-					Markdown: fmt.Sprintf("**%s**
-
-%s
-
-### Remediation
-%s", f.Title, f.Description, f.Remediation),
+					Text: fmt.Sprintf("%s\n\nRemediation: %s", f.Description, f.Remediation),
+					Markdown: fmt.Sprintf("**%s**\n\n%s\n\n### Remediation\n%s", f.Title, f.Description, f.Remediation),
 				},
 				Properties: sarifRuleProperties{
 					Tags: []string{"security", "npm", "supply-chain"},

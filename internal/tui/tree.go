@@ -61,13 +61,9 @@ func (m TreeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m TreeModel) View() string {
 	var s strings.Builder
 	s.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")).Render("Dependency Tree (Demo)"))
-	s.WriteString("
-
-")
+	s.WriteString("\n\n")
 	m.renderNode(&s, m.Root, "")
-	s.WriteString("
-Press 'q' to quit.
-")
+	s.WriteString("\nPress 'q' to quit.\n")
 	return s.String()
 }
 
@@ -89,8 +85,7 @@ func (m TreeModel) renderNode(s *strings.Builder, node *DependencyNode, prefix s
 	if node.Severity != "" {
 		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(fmt.Sprintf(" [%s]", strings.ToUpper(node.Severity))))
 	}
-	s.WriteString("
-")
+	s.WriteString("\n")
 
 	if node.Expanded {
 		for i, child := range node.Children {
