@@ -1,6 +1,6 @@
 module github.com/kluth/npm-security-auditter
 
-go 1.25.6
+go 1.24
 
 require (
 	github.com/charmbracelet/bubbles v0.21.1
