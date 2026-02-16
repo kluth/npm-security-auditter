@@ -321,15 +321,15 @@ func (r *Reporter) pdfFindings(pdf *fpdf.Fpdf, mergedFindings []MergedFinding, s
 
 func (r *Reporter) pdfRenderFinding(pdf *fpdf.Fpdf, mf MergedFinding, c pdfColors) {
 	pdf.SetFont("Arial", "B", 10)
-	if mf.Severity >= analyzer.SeverityHigh {
+	if mf.Finding.Severity >= analyzer.SeverityHigh {
 		pdf.SetTextColor(c.red[0], c.red[1], c.red[2])
-	} else if mf.Severity >= analyzer.SeverityMedium {
+	} else if mf.Finding.Severity >= analyzer.SeverityMedium {
 		pdf.SetTextColor(227, 98, 9)
 	} else {
 		pdf.SetTextColor(c.gray[0], c.gray[1], c.gray[2])
 	}
 
-	titleText := fmt.Sprintf("[%s] %s", mf.Severity, r.T(mf.Title))
+	titleText := fmt.Sprintf("[%s] %s", mf.Finding.Severity, r.T(mf.Title))
 	if mf.Count > 1 {
 		titleText += fmt.Sprintf(" (x%d)", mf.Count)
 	}
@@ -660,7 +660,7 @@ func (r *Reporter) renderSeveritySection(w io.Writer, sev analyzer.Severity, all
 		findingsToDisplay = filterBySeverity(allFindings, sev)
 	} else {
 		for _, mf := range mergedFindings {
-			if mf.Severity == sev {
+			if mf.Finding.Severity == sev {
 				mergedToDisplay = append(mergedToDisplay, mf)
 			}
 		}
