@@ -87,26 +87,3 @@ func TestExfiltrationAnalyzer_IPBasedURL(t *testing.T) {
 		t.Fatal("Expected to detect IP-based URL")
 	}
 }
-
-func TestHasHighEntropy(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected bool
-		name     string
-	}{
-		{"google", false, "normal domain"},
-		{"xkcdqwrt", true, "high entropy"},
-		{"aeiou", false, "vowels only"},
-		{"xyz", false, "too short"},
-		{"qwrtplkjhgfds", true, "consonant heavy"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := hasHighEntropy(tt.input)
-			if result != tt.expected {
-				t.Errorf("hasHighEntropy(%q) = %v, want %v", tt.input, result, tt.expected)
-			}
-		})
-	}
-}

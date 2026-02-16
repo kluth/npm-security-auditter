@@ -2,7 +2,6 @@ package analyzer
 
 import (
 	"fmt"
-	"net/url"
 	"regexp"
 	"strings"
 )
