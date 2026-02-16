@@ -64,7 +64,7 @@ func TestVulnAnalyzer(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.statusCode)
 				if tt.statusCode == http.StatusOK {
-					json.NewEncoder(w).Encode(tt.response)
+					_ = json.NewEncoder(w).Encode(tt.response)
 				}
 			}))
 			defer server.Close()
@@ -90,7 +90,7 @@ func TestVulnAnalyzer(t *testing.T) {
 func TestVulnAnalyzer_EmptySummaryFallback(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(osvResponse{
+		_ = json.NewEncoder(w).Encode(osvResponse{
 			Vulns: []osvVuln{
 				{
 					ID:      "GHSA-empty-summary",
@@ -123,7 +123,7 @@ func TestVulnAnalyzer_LongDescriptionTruncation(t *testing.T) {
 	longDesc := strings.Repeat("A", 250)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(osvResponse{
+		_ = json.NewEncoder(w).Encode(osvResponse{
 			Vulns: []osvVuln{
 				{
 					ID:      "GHSA-long-desc",
@@ -157,7 +157,7 @@ func TestVulnAnalyzer_LongDescriptionTruncation(t *testing.T) {
 func TestVulnAnalyzer_InvalidJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{invalid`))
+		_, _ = w.Write([]byte(`{invalid`))
 	}))
 	defer server.Close()
 
@@ -175,7 +175,7 @@ func TestVulnAnalyzer_InvalidJSON(t *testing.T) {
 func TestVulnAnalyzer_ExploitAndRemediation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(osvResponse{
+		_ = json.NewEncoder(w).Encode(osvResponse{
 			Vulns: []osvVuln{
 				{
 					ID:      "GHSA-test-1234",
@@ -218,7 +218,7 @@ func TestVulnAnalyzer_ExploitAndRemediation(t *testing.T) {
 func TestVulnAnalyzer_NoSeverity(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(osvResponse{
+		_ = json.NewEncoder(w).Encode(osvResponse{
 			Vulns: []osvVuln{
 				{
 					ID:       "GHSA-no-severity",

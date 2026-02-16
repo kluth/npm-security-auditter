@@ -731,11 +731,11 @@ func TestRepoVerifierAnalyzer_VerifyGitHubArchived(t *testing.T) {
 				Description: "a test repo",
 				Archived:    true,
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 		if r.URL.Path == "/repos/owner/repo/readme" {
-			w.Write([]byte("# Test README"))
+			_, _ = w.Write([]byte("# Test README"))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)

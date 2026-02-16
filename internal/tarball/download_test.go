@@ -334,14 +334,18 @@ func TestDownload_OversizedFile(t *testing.T) {
 	tw := tar.NewWriter(gzw)
 
 	// Write a header with Size > maxFileSize but don't actually write that much data
-	tw.WriteHeader(&tar.Header{
+	if err := tw.WriteHeader(&tar.Header{
 		Name:     "package/huge.js",
 		Mode:     0o644,
 		Size:     11 * 1024 * 1024, // 11MB, exceeds 10MB limit
 		Typeflag: tar.TypeReg,
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	// Write minimal actual data (tar will pad)
-	tw.Write([]byte("x"))
+	if _, err := tw.Write([]byte("x")); err != nil {
+		t.Fatal(err)
+	}
 	tw.Close()
 	gzw.Close()
 

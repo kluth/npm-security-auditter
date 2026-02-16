@@ -258,13 +258,15 @@ func TestRunWithSeverityFilter(t *testing.T) {
 func TestRunWithPackageLock(t *testing.T) {
 	dir := t.TempDir()
 	lockPath := filepath.Join(dir, "package-lock.json")
-	os.WriteFile(lockPath, []byte(`{
+	if err := os.WriteFile(lockPath, []byte(`{
 		"name":"test",
 		"lockfileVersion":3,
 		"packages":{
 			"node_modules/nonexistent-xyz":{"version":"1.0.0"}
 		}
-	}`), 0o644)
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	interactive = false
 	projectPath = lockPath
@@ -310,7 +312,9 @@ func TestRunConcurrencyClamp(t *testing.T) {
 func TestRunWithValidPackageJSON(t *testing.T) {
 	dir := t.TempDir()
 	pkgPath := filepath.Join(dir, "package.json")
-	os.WriteFile(pkgPath, []byte(`{"name":"test","dependencies":{"nonexistent-xyz":"^1.0.0"}}`), 0o644)
+	if err := os.WriteFile(pkgPath, []byte(`{"name":"test","dependencies":{"nonexistent-xyz":"^1.0.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	interactive = false
 	projectPath = pkgPath
@@ -352,7 +356,7 @@ func TestRunWithMockRegistry(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(metadata)
+		_ = json.NewEncoder(w).Encode(metadata)
 	}))
 	defer srv.Close()
 
@@ -398,13 +402,15 @@ func TestRunWithMockRegistryProjectMode(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(metadata)
+		_ = json.NewEncoder(w).Encode(metadata)
 	}))
 	defer srv.Close()
 
 	dir := t.TempDir()
 	pkgPath := filepath.Join(dir, "package.json")
-	os.WriteFile(pkgPath, []byte(`{"name":"test","dependencies":{"dep-a":"^1.0.0","dep-b":"^2.0.0"}}`), 0o644)
+	if err := os.WriteFile(pkgPath, []byte(`{"name":"test","dependencies":{"dep-a":"^1.0.0","dep-b":"^2.0.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	interactive = false
 	projectPath = pkgPath
@@ -463,7 +469,7 @@ func TestRunVerboseNoLatest(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(metadata)
+		_ = json.NewEncoder(w).Encode(metadata)
 	}))
 	defer srv.Close()
 
@@ -503,7 +509,7 @@ func TestRunVerboseVersionNotFound(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(metadata)
+		_ = json.NewEncoder(w).Encode(metadata)
 	}))
 	defer srv.Close()
 
@@ -575,7 +581,7 @@ func TestQuietSuppressesStderrInAudit(t *testing.T) {
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(metadata)
+		_ = json.NewEncoder(w).Encode(metadata)
 	}))
 	defer srv.Close()
 
@@ -616,7 +622,7 @@ func TestQuietStillOutputsReport(t *testing.T) {
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(metadata)
+		_ = json.NewEncoder(w).Encode(metadata)
 	}))
 	defer srv.Close()
 
@@ -801,7 +807,7 @@ func TestFailOnIntegrationWithMockRegistry(t *testing.T) {
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(metadata)
+		_ = json.NewEncoder(w).Encode(metadata)
 	}))
 	defer srv.Close()
 
@@ -1114,7 +1120,7 @@ func TestFlagChangedNilCmd(t *testing.T) {
 func TestLoadConfigFileValid(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".auditter.yaml")
-	os.WriteFile(cfgPath, []byte(`
+	if err := os.WriteFile(cfgPath, []byte(`
 format: markdown
 lang: de
 timeout: 60
@@ -1124,7 +1130,9 @@ quiet: true
 severity: high
 fail-on: critical
 registry: http://custom:4873
-`), 0o644)
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg, err := loadConfigFile(cfgPath)
 	if err != nil {
@@ -1175,7 +1183,9 @@ func TestLoadConfigFileNotFound(t *testing.T) {
 func TestLoadConfigFileInvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".auditter.yaml")
-	os.WriteFile(cfgPath, []byte(`{{{invalid yaml`), 0o644)
+	if err := os.WriteFile(cfgPath, []byte(`{{{invalid yaml`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	_, err := loadConfigFile(cfgPath)
 	if err == nil {
@@ -1188,7 +1198,9 @@ func TestLoadConfigFileInvalidYAML(t *testing.T) {
 
 func TestFindConfigFileLocalFirst(t *testing.T) {
 	// Create .auditter.yaml in current directory
-	os.WriteFile(".auditter.yaml", []byte("format: json\n"), 0o644)
+	if err := os.WriteFile(".auditter.yaml", []byte("format: json\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	defer os.Remove(".auditter.yaml")
 
 	path := findConfigFile()
@@ -1301,7 +1313,9 @@ func TestFullPriorityChain(t *testing.T) {
 	// Priority: flag > env > config > default
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".auditter.yaml")
-	os.WriteFile(cfgPath, []byte("format: csv\nlang: es\n"), 0o644)
+	if err := os.WriteFile(cfgPath, []byte("format: csv\nlang: es\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg, err := loadConfigFile(cfgPath)
 	if err != nil {

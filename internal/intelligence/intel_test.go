@@ -91,7 +91,7 @@ func TestIntelAnalyzer(t *testing.T) {
 func TestGitHubProvider_Fetch(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`[{"name": "evil-pkg", "description": "stolen credentials", "severity": "critical"}]`))
+		_, _ = w.Write([]byte(`[{"name": "evil-pkg", "description": "stolen credentials", "severity": "critical"}]`))
 	}))
 	defer ts.Close()
 

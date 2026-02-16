@@ -56,7 +56,7 @@ func TestTarballAnalyzer_MaliciousPatterns(t *testing.T) {
 	data, shasum := makeTarballData(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -100,7 +100,7 @@ func TestTarballAnalyzer_HiddenFiles(t *testing.T) {
 	data, shasum := makeTarballData(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -138,7 +138,7 @@ func TestTarballAnalyzer_PackageNameMismatch(t *testing.T) {
 	data, shasum := makeTarballData(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -241,7 +241,7 @@ func TestTarballAnalyzer_Obfuscation_And_Entropy(t *testing.T) {
 	data, shasum := makeTarballData(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -293,7 +293,7 @@ func TestTarballAnalyzer_Crypto_And_Malware(t *testing.T) {
 	data, shasum := makeTarballData(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -338,7 +338,7 @@ func TestTarballAnalyzer_PackageJSON(t *testing.T) {
 	data, shasum := makeTarballData(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -389,7 +389,7 @@ func TestTarballAnalyzer_LargeJSFile(t *testing.T) {
 	data, shasum := makeTarballData(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -428,7 +428,7 @@ func TestTarballAnalyzer_LargeNonJSFile(t *testing.T) {
 	data, shasum := makeTarballData(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -464,7 +464,7 @@ func TestTarballAnalyzer_SensitiveDirectory(t *testing.T) {
 	data, shasum := makeTarballData(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -519,7 +519,9 @@ func TestReadFileHead(t *testing.T) {
 func TestReadFileHead_ValidFile(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/test.bin"
-	os.WriteFile(path, []byte{0x4d, 0x5a, 0x90, 0x00}, 0o644)
+	if err := os.WriteFile(path, []byte{0x4d, 0x5a, 0x90, 0x00}, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	data, err := readFileHead(path, 8)
 	if err != nil {
@@ -533,7 +535,9 @@ func TestReadFileHead_ValidFile(t *testing.T) {
 func TestReadFileHead_EmptyFile(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/empty.bin"
-	os.WriteFile(path, []byte{}, 0o644)
+	if err := os.WriteFile(path, []byte{}, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	_, err := readFileHead(path, 8)
 	if err == nil {
@@ -574,7 +578,7 @@ func TestTarballAnalyzer_BinaryMagicBytes(t *testing.T) {
 	data, shasum := makeTarballData(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -649,7 +653,7 @@ func TestTarballAnalyzer_DetectBinaries_ShortFile(t *testing.T) {
 	data, shasum := makeTarballData(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -682,7 +686,7 @@ func TestTarballAnalyzer_EncodedPayloads_SmallFile(t *testing.T) {
 	data, shasum := makeTarballData(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -711,7 +715,7 @@ func TestTarballAnalyzer_ShasumMismatch(t *testing.T) {
 	data, _ := makeTarballData(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 

@@ -28,7 +28,7 @@ func TestIssuesAnalyzer_VersionRepoFallback(t *testing.T) {
 	mux.HandleFunc("/repos/owner/repo/issues", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.github.v3+json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`[
+		_, _ = w.Write([]byte(`[
 			{"title": "security concern", "html_url": "https://github.com/owner/repo/issues/1", "state": "open"}
 		]`))
 	})
@@ -102,7 +102,7 @@ func TestIssuesAnalyzer_InvalidJSON(t *testing.T) {
 	mux.HandleFunc("/repos/owner/repo/issues", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{invalid json`))
+		_, _ = w.Write([]byte(`{invalid json`))
 	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -130,7 +130,7 @@ func TestIssuesAnalyzer(t *testing.T) {
 	mux.HandleFunc("/repos/owner/repo/issues", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.github.v3+json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`[
+		_, _ = w.Write([]byte(`[
 			{"title": "security vulnerability in parser", "html_url": "https://github.com/owner/repo/issues/1", "state": "open"},
 			{"title": "malware detected", "html_url": "https://github.com/owner/repo/issues/2", "state": "open"},
 			{"title": "bug: typo in readme", "html_url": "https://github.com/owner/repo/issues/3", "state": "open"}
