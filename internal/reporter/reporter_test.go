@@ -296,7 +296,7 @@ func TestKlingon(t *testing.T) {
 		Package: "klingon-pkg",
 		Version: "1.0.0",
 	}
-	r.Render(report)
+	_ = r.Render(report)
 	// Check for Klingon translation of "Package Information" section
 	if !strings.Contains(buf.String(), "ghom De'") {
 		t.Error("expected Klingon package info section")
@@ -310,7 +310,7 @@ func TestVulcan(t *testing.T) {
 		Package: "vulcan-pkg",
 		Version: "1.0.0",
 	}
-	r.Render(report)
+	_ = r.Render(report)
 	if !strings.Contains(buf.String(), "Probability Analysis") {
 		t.Error("expected Vulcan risk assessment label")
 	}
@@ -323,7 +323,7 @@ func TestMarkdown(t *testing.T) {
 		Package: "md-pkg",
 		Version: "1.0.0",
 	}
-	r.Render(report)
+	_ = r.Render(report)
 	if !strings.HasPrefix(buf.String(), "#") {
 		t.Error("expected Markdown header")
 	}
@@ -336,7 +336,7 @@ func TestHTML(t *testing.T) {
 		Package: "html-pkg",
 		Version: "1.0.0",
 	}
-	r.Render(report)
+	_ = r.Render(report)
 	if !strings.Contains(buf.String(), "<html>") {
 		t.Error("expected HTML tags")
 	}
@@ -356,7 +356,7 @@ func TestCSV(t *testing.T) {
 			},
 		},
 	}
-	r.Render(report)
+	_ = r.Render(report)
 	if !strings.Contains(buf.String(), "Severity,Analyzer,Title,Description") {
 		t.Error("expected CSV header")
 	}
@@ -1181,7 +1181,7 @@ func TestSindarin(t *testing.T) {
 	var buf bytes.Buffer
 	r := New(&buf, FormatTerminal, LangSIN)
 	report := Report{Package: "elvish-pkg", Version: "1.0.0"}
-	r.Render(report)
+	_ = r.Render(report)
 	if !strings.Contains(buf.String(), "Omen Analysis") {
 		t.Error("expected Sindarin risk assessment label")
 	}

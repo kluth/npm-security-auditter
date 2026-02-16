@@ -26,7 +26,7 @@ func NewManager(cacheDir string) *Manager {
 		home, _ := os.UserHomeDir()
 		cacheDir = filepath.Join(home, ".cache", "auditter")
 	}
-	os.MkdirAll(cacheDir, 0755)
+	_ = os.MkdirAll(cacheDir, 0755)
 
 	return &Manager{
 		dataPath: filepath.Join(cacheDir, "intelligence.json"),
@@ -122,7 +122,7 @@ func (m *Manager) AutoUpdate(ctx context.Context, threshold time.Duration) {
 		// Run update in background context or synchronously depending on caller preference
 		// For CLI tool, we usually want it to be fast, but security data is critical.
 		// We'll run it synchronously for now but with a shorter timeout if called via AutoUpdate.
-		m.Update(ctx)
+		_ = m.Update(ctx)
 	}
 }
 

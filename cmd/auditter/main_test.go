@@ -1071,7 +1071,7 @@ func TestFlagOverridesEnv(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.Flags().StringVar(&format, "format", "terminal", "")
 	// Simulate user passing --format json
-	cmd.Flags().Set("format", "json")
+	_ = cmd.Flags().Set("format", "json")
 
 	resolveStringEnv(cmd, "format", "AUDITTER_FORMAT", &format)
 
@@ -1356,7 +1356,7 @@ func TestFullPriorityChain(t *testing.T) {
 	// Apply flag (flag > env)
 	cmd := &cobra.Command{}
 	cmd.Flags().StringVar(&format, "format", "terminal", "")
-	cmd.Flags().Set("format", "json")
+	_ = cmd.Flags().Set("format", "json")
 	resolveStringEnv(cmd, "format", "AUDITTER_FORMAT", &format)
 	if format != "json" {
 		t.Errorf("after flag: expected format=json, got %q", format)

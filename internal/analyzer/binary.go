@@ -20,8 +20,6 @@ func (b *BinaryAnalyzer) Name() string { return "binary-analysis" }
 var (
 	ipPattern      = regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
 	urlPattern     = regexp.MustCompile(`https?://[^\s"'\)]+`)
-	hexPattern     = regexp.MustCompile(`(?:0x[0-9a-fA-F]{8,}|\\x[0-9a-fA-F]{2}){4,}`)
-	base64Pattern  = regexp.MustCompile(`[A-Za-z0-9+/]{40,}={0,2}`)
 	obfuscPatterns = []struct {
 		pattern     *regexp.Regexp
 		description string

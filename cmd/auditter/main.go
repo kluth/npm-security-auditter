@@ -445,9 +445,9 @@ func renderAISummary(out io.Writer, projectReport reporter.ProjectReport, deps [
 	jsonEnc := json.NewEncoder(&jsonBuf)
 	jsonEnc.SetIndent("", "  ")
 	if isMultiPackageAudit(deps) {
-		jsonEnc.Encode(projectReport)
+		_ = jsonEnc.Encode(projectReport)
 	} else {
-		jsonEnc.Encode(projectReport.Reports[0])
+		_ = jsonEnc.Encode(projectReport.Reports[0])
 	}
 
 	summary, err := ai.GenerateSummary([]byte(jsonBuf.String()))
