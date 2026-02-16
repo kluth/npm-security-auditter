@@ -68,7 +68,6 @@ universal_binaries:
 
 sboms:
   - artifacts: archive
-    args: ["$artifact", "--output", "spdx-json=$projectname_$version_$os_$arch.sbom.json"]
 
 checksum:
   name_template: 'checksums.txt'
