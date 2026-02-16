@@ -62,7 +62,7 @@ func (a *IssuesAnalyzer) checkGitHubIssues(ctx context.Context, owner, repo stri
 	var findings []Finding
 
 	// We'll search for issues with "security", "malware", "compromised", "vulnerability"
-	query := fmt.Sprintf("security malware compromised vulnerability hijack")
+	query := "security malware compromised vulnerability hijack"
 	keywords := strings.Fields(query)
 
 	apiURL := fmt.Sprintf("%s/repos/%s/%s/issues?state=open&per_page=100", a.githubBaseURL, owner, repo)

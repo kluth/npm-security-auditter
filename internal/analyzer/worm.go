@@ -43,6 +43,7 @@ func (a *WormAnalyzer) scanContent(content string, filename string) []Finding {
 	hasNpmrcAccess := npmrcAccessPattern.MatchString(content)
 	hasGitCreds := gitCredentialPattern.MatchString(content)
 	hasPkgJsonMod := pkgJsonModifyPattern.MatchString(content)
+	hasScriptInjection := scriptInjectionPattern.MatchString(content)
 	hasExfil := strings.Contains(content, "fetch(") ||
 		strings.Contains(content, "sendBeacon") ||
 		strings.Contains(content, "https.request") ||
@@ -97,10 +98,10 @@ func (a *WormAnalyzer) scanContent(content string, filename string) []Finding {
 	}
 
 	// package.json modification for injection
-	if hasPkgJsonMod {
+	if hasPkgJsonMod || hasScriptInjection {
 		severity := SeverityHigh
-		desc := "modifies package.json"
-		if strings.Contains(content, "postinstall") || strings.Contains(content, "preinstall") {
+		desc := "modifies or injects into package.json"
+		if strings.Contains(content, "postinstall") || strings.Contains(content, "preinstall") || hasScriptInjection {
 			severity = SeverityCritical
 			desc = "injects lifecycle scripts into package.json for worm propagation"
 		}

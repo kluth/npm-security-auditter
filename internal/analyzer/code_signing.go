@@ -21,9 +21,6 @@ func (a *CodeSigningAnalyzer) Name() string {
 	return "code-signing"
 }
 
-// npmRegistryKeyPrefix is the known npm registry signing key prefix.
-const npmRegistryKeyPrefix = "SHA256:"
-
 func (a *CodeSigningAnalyzer) Analyze(ctx context.Context, pkg *registry.PackageMetadata, version *registry.PackageVersion) ([]Finding, error) {
 	var findings []Finding
 

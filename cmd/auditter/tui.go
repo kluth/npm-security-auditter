@@ -53,7 +53,6 @@ type model struct {
 	pkgName        string
 	spinner        spinner.Model
 	resultMsg      string
-	err            error
 	reportContent  string // Store report for display/save
 }
 

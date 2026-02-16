@@ -55,17 +55,19 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "auditter [package-name]",
 		Short: "Audit npm packages for security risks",
-		Long: `auditter performs a comprehensive security audit of npm packages.
+		Long: fmt.Sprintf(`auditter performs a comprehensive security audit of npm packages.
 		
 		It checks for known vulnerabilities, suspicious install scripts,
 		typosquatting, maintainer risks, metadata anomalies, dependency
 		issues, binary/obfuscated code, supply chain provenance,
 		tarball contents, repository verification, and behavior in a sandbox environment.
 		
+		Build Info: Commit %s, Date %s
+		
 		Examples:  auditter lodash
   auditter express --json --output report.json
   auditter --project package.json --severity high
-  auditter --node-modules --format html --output audit.html`,
+  auditter --node-modules --format html --output audit.html`, commit, date),
 		Version: version,
 		Args:    cobra.ArbitraryArgs,
 		RunE:    run,
