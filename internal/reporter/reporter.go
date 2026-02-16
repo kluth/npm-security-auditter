@@ -79,6 +79,7 @@ const (
 	FormatHTML     = "html"
 	FormatCSV      = "csv"
 	FormatPDF      = "pdf"
+	FormatSARIF    = "sarif"
 )
 
 // New creates a new Reporter.
@@ -127,6 +128,8 @@ func (r *Reporter) Render(report Report) error {
 		return r.renderCSV(report)
 	case FormatPDF:
 		return r.renderPDF(report)
+	case FormatSARIF:
+		return r.renderSARIF(report)
 	default:
 		return r.renderTerminal(report)
 	}

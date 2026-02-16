@@ -81,7 +81,7 @@ func initialModel() model {
 	return model{
 		state:    stateInput,
 		pkgInput: ti,
-		formats:  []string{"terminal", "markdown", "html", "json", "csv", "pdf"},
+		formats:  []string{"terminal", "markdown", "html", "json", "csv", "pdf", "sarif"},
 		langs:    []string{"en", "de", "fr", "es", "it", "pt", "jp", "zh", "ru", "tlh", "vul", "sin"},
 		spinner:  s,
 	}

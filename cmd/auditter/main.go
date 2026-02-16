@@ -17,10 +17,12 @@ import (
 	"github.com/kluth/npm-security-auditter/internal/ai"
 	"github.com/kluth/npm-security-auditter/internal/analyzer"
 	"github.com/kluth/npm-security-auditter/internal/intelligence"
+	"github.com/kluth/npm-security-auditter/internal/policy"
 	"github.com/kluth/npm-security-auditter/internal/project"
 	"github.com/kluth/npm-security-auditter/internal/registry"
 	"github.com/kluth/npm-security-auditter/internal/reporter"
 	"github.com/kluth/npm-security-auditter/internal/reputation"
+	"github.com/kluth/npm-security-auditter/internal/tui"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -72,6 +74,16 @@ func main() {
 		Args:    cobra.ArbitraryArgs,
 		RunE:    run,
 	}
+
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "tree",
+		Short: "Visualize dependency tree (demo)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p := tea.NewProgram(tui.NewTreeModel())
+			_, err := p.Run()
+			return err
+		},
+	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "update-intel",
@@ -194,6 +206,22 @@ func runAudit(args []string) error {
 	if failOn != "" {
 		return checkFailOn(projectReport, failOn)
 	}
+
+	// Policy check
+	if cfgPath := findConfigFile(); cfgPath != "" {
+		cfg, _ := loadConfigFile(cfgPath)
+		if cfg != nil && (cfg.Policy.MaxSeverity > 0 || len(cfg.Policy.BannedLicenses) > 0 || !cfg.Policy.AllowScripts || len(cfg.Policy.BannedPackages) > 0) {
+			violations := policy.Evaluate(&projectReport, &cfg.Policy)
+			if len(violations) > 0 {
+				fmt.Fprintln(os.Stderr, "\nPolicy Violations Detected:")
+				for _, v := range violations {
+					fmt.Fprintf(os.Stderr, " - %s\n", v)
+				}
+				return &ExitError{Code: 3, Message: "Policy check failed"}
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -519,15 +547,16 @@ func resolveBoolEnv(cmd *cobra.Command, flagName, envKey string, target *bool) {
 }
 
 type configFile struct {
-	Registry    string `yaml:"registry"`
-	Format      string `yaml:"format"`
-	Lang        string `yaml:"lang"`
-	Severity    string `yaml:"severity"`
-	FailOn      string `yaml:"fail-on"`
-	Timeout     int    `yaml:"timeout"`
-	Concurrency int    `yaml:"concurrency"`
-	NoSandbox   bool   `yaml:"no-sandbox"`
-	Quiet       bool   `yaml:"quiet"`
+	Registry    string        `yaml:"registry"`
+	Format      string        `yaml:"format"`
+	Lang        string        `yaml:"lang"`
+	Severity    string        `yaml:"severity"`
+	FailOn      string        `yaml:"fail-on"`
+	Timeout     int           `yaml:"timeout"`
+	Concurrency int           `yaml:"concurrency"`
+	NoSandbox   bool          `yaml:"no-sandbox"`
+	Quiet       bool          `yaml:"quiet"`
+	Policy      policy.Policy `yaml:"policy"`
 }
 
 func loadConfigFile(path string) (*configFile, error) {
