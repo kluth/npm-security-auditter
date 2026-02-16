@@ -144,11 +144,13 @@ func TestDownload_Errors(t *testing.T) {
 		// Valid gzip header but bad content
 		var buf bytes.Buffer
 		gz := gzip.NewWriter(&buf)
-		gz.Write([]byte("not a tar"))
+		if _, err := gz.Write([]byte("not a tar")); err != nil {
+			t.Fatal(err)
+		}
 		gz.Close()
 
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write(buf.Bytes())
+			_, _ = w.Write(buf.Bytes())
 		}))
 		defer srv.Close()
 
@@ -176,8 +178,12 @@ func TestDownload_PathTraversal(t *testing.T) {
 		Size:     5,
 		Typeflag: tar.TypeReg,
 	}
-	tw.WriteHeader(hdr)
-	tw.Write([]byte("evil\n"))
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte("evil\n")); err != nil {
+		t.Fatal(err)
+	}
 	tw.Close()
 	gzw.Close()
 

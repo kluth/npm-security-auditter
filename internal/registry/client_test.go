@@ -61,13 +61,13 @@ func TestGetPackage(t *testing.T) {
 		switch r.URL.Path {
 		case "/test-package":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(metadata)
+			_ = json.NewEncoder(w).Encode(metadata)
 		case "/@scope/scoped-pkg":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(PackageMetadata{Name: "@scope/scoped-pkg"})
+			_ = json.NewEncoder(w).Encode(PackageMetadata{Name: "@scope/scoped-pkg"})
 		case "/not-found":
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"error": "Not found"}`))
+			_, _ = w.Write([]byte(`{"error": "Not found"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -122,7 +122,7 @@ func TestGetDownloads(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/downloads/point/last-week/test-pkg" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(DownloadCount{
+			_ = json.NewEncoder(w).Encode(DownloadCount{
 				Downloads: 50000,
 				Package:   "test-pkg",
 			})
@@ -157,7 +157,7 @@ func TestGetPackage_Errors(t *testing.T) {
 
 	t.Run("JSON Decode Error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("invalid-json"))
+			_, _ = w.Write([]byte("invalid-json"))
 		}))
 		defer server.Close()
 
@@ -178,9 +178,6 @@ func TestGetPackage_Errors(t *testing.T) {
 		_, err := client.GetPackage(context.Background(), "pkg")
 		if err == nil {
 			t.Error("expected status error")
-		}
-		if !time.Now().IsZero() && err != nil && err.Error() != "" {
-			// just checking if we can access error
 		}
 	})
 }
@@ -211,7 +208,7 @@ func TestGetDownloads_Errors(t *testing.T) {
 
 	t.Run("JSON Decode Error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("invalid-json"))
+			_, _ = w.Write([]byte("invalid-json"))
 		}))
 		defer server.Close()
 
