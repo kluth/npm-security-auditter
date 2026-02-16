@@ -90,10 +90,8 @@ func (m TreeModel) renderNode(s *strings.Builder, node *DependencyNode, prefix s
 	if node.Expanded {
 		for i, child := range node.Children {
 			connector := "├── "
-			childPrefix := prefix + "│   "
 			if i == len(node.Children)-1 {
 				connector = "└── "
-				childPrefix = prefix + "    "
 			}
 			m.renderNode(s, child, prefix+connector)
 			// Reset prefix for subsequent siblings is handled by recursion logic,

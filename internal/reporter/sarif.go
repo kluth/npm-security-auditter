@@ -3,7 +3,6 @@ package reporter
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/kluth/npm-security-auditter/internal/analyzer"
 )
