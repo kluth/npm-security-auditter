@@ -20,7 +20,9 @@ func TestParsePackageJSON(t *testing.T) {
 			"jest": "^29.0.0"
 		}
 	}`
-	os.WriteFile(path, []byte(content), 0o644)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	deps, err := ParsePackageJSON(path)
 	if err != nil {
@@ -46,7 +48,9 @@ func TestParsePackageJSON(t *testing.T) {
 func TestParsePackageJSONEmpty(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "package.json")
-	os.WriteFile(path, []byte(`{}`), 0o644)
+	if err := os.WriteFile(path, []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	deps, err := ParsePackageJSON(path)
 	if err != nil {
@@ -67,7 +71,9 @@ func TestParsePackageJSONFileNotFound(t *testing.T) {
 func TestParsePackageJSONInvalid(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "package.json")
-	os.WriteFile(path, []byte(`{invalid`), 0o644)
+	if err := os.WriteFile(path, []byte(`{invalid`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	_, err := ParsePackageJSON(path)
 	if err == nil {
@@ -84,7 +90,9 @@ func TestParsePackageJSONDevOnly(t *testing.T) {
 			"eslint": "^8.0.0"
 		}
 	}`
-	os.WriteFile(path, []byte(content), 0o644)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	deps, err := ParsePackageJSON(path)
 	if err != nil {
@@ -124,7 +132,9 @@ func TestParsePackageLock(t *testing.T) {
 				}
 			}
 		}`
-		os.WriteFile(path, []byte(content), 0o644)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 		deps, err := ParsePackageLock(path)
 		if err != nil {
@@ -159,7 +169,9 @@ func TestParsePackageLock(t *testing.T) {
 				}
 			}
 		}`
-		os.WriteFile(path, []byte(content), 0o644)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 		deps, err := ParsePackageLock(path)
 		if err != nil {
@@ -190,7 +202,9 @@ func TestParsePackageLock(t *testing.T) {
 				}
 			}
 		}`
-		os.WriteFile(path, []byte(content), 0o644)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 		deps, err := ParsePackageLock(path)
 		if err != nil {
@@ -211,7 +225,9 @@ func TestParsePackageLock(t *testing.T) {
 	t.Run("invalid JSON", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "package-lock.json")
-		os.WriteFile(path, []byte(`{invalid`), 0o644)
+		if err := os.WriteFile(path, []byte(`{invalid`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 		_, err := ParsePackageLock(path)
 		if err == nil {
@@ -224,12 +240,20 @@ func TestAuditNodeModules(t *testing.T) {
 	t.Run("regular packages", func(t *testing.T) {
 		dir := t.TempDir()
 		nm := filepath.Join(dir, "node_modules")
-		os.MkdirAll(filepath.Join(nm, "lodash"), 0o755)
-		os.MkdirAll(filepath.Join(nm, "express"), 0o755)
+		if err := os.MkdirAll(filepath.Join(nm, "lodash"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(nm, "express"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 		// Create a file (should be skipped)
-		os.WriteFile(filepath.Join(nm, "readme.txt"), []byte("hi"), 0o644)
+		if err := os.WriteFile(filepath.Join(nm, "readme.txt"), []byte("hi"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		// Create a hidden dir (should be skipped)
-		os.MkdirAll(filepath.Join(nm, ".cache"), 0o755)
+		if err := os.MkdirAll(filepath.Join(nm, ".cache"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 
 		deps, err := AuditNodeModules(dir)
 		if err != nil {
@@ -252,9 +276,15 @@ func TestAuditNodeModules(t *testing.T) {
 	t.Run("scoped packages", func(t *testing.T) {
 		dir := t.TempDir()
 		nm := filepath.Join(dir, "node_modules")
-		os.MkdirAll(filepath.Join(nm, "@types", "node"), 0o755)
-		os.MkdirAll(filepath.Join(nm, "@types", "react"), 0o755)
-		os.MkdirAll(filepath.Join(nm, "lodash"), 0o755)
+		if err := os.MkdirAll(filepath.Join(nm, "@types", "node"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(nm, "@types", "react"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(nm, "lodash"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 
 		deps, err := AuditNodeModules(dir)
 		if err != nil {
@@ -285,7 +315,9 @@ func TestAuditNodeModules(t *testing.T) {
 	t.Run("trailing slash in root", func(t *testing.T) {
 		dir := t.TempDir()
 		nm := filepath.Join(dir, "node_modules")
-		os.MkdirAll(filepath.Join(nm, "pkg-a"), 0o755)
+		if err := os.MkdirAll(filepath.Join(nm, "pkg-a"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 
 		deps, err := AuditNodeModules(dir + "/")
 		if err != nil {

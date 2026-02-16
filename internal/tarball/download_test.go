@@ -54,7 +54,7 @@ func TestDownload_Success(t *testing.T) {
 	data, shasum := makeTarball(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -91,7 +91,7 @@ func TestDownload_ShasumMismatch(t *testing.T) {
 	data, _ := makeTarball(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -127,7 +127,7 @@ func TestDownload_Errors(t *testing.T) {
 
 	t.Run("Invalid Gzip", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("not gzip data"))
+			_, _ = w.Write([]byte("not gzip data"))
 		}))
 		defer srv.Close()
 
@@ -184,7 +184,7 @@ func TestDownload_PathTraversal(t *testing.T) {
 	shasum := hex.EncodeToString(hasher.Sum(nil))
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(buf.Bytes())
+		_, _ = w.Write(buf.Bytes())
 	}))
 	defer srv.Close()
 
@@ -247,7 +247,7 @@ func TestDownload_EmptyShasum(t *testing.T) {
 	data, _ := makeTarball(t, files)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
@@ -268,21 +268,27 @@ func TestDownload_DirectoryEntry(t *testing.T) {
 	tw := tar.NewWriter(gzw)
 
 	// Add a directory entry
-	tw.WriteHeader(&tar.Header{
+	if err := tw.WriteHeader(&tar.Header{
 		Name:     "package/lib/",
 		Mode:     0o755,
 		Typeflag: tar.TypeDir,
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add a regular file
 	content := []byte(`console.log("hello");`)
-	tw.WriteHeader(&tar.Header{
+	if err := tw.WriteHeader(&tar.Header{
 		Name:     "package/index.js",
 		Mode:     0o644,
 		Size:     int64(len(content)),
 		Typeflag: tar.TypeReg,
-	})
-	tw.Write(content)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		t.Fatal(err)
+	}
 
 	tw.Close()
 	gzw.Close()
@@ -290,7 +296,7 @@ func TestDownload_DirectoryEntry(t *testing.T) {
 	shasum := hex.EncodeToString(hasher.Sum(nil))
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(buf.Bytes())
+		_, _ = w.Write(buf.Bytes())
 	}))
 	defer srv.Close()
 
@@ -334,7 +340,7 @@ func TestDownload_OversizedFile(t *testing.T) {
 	gzw.Close()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(buf.Bytes())
+		_, _ = w.Write(buf.Bytes())
 	}))
 	defer srv.Close()
 

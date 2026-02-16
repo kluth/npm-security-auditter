@@ -76,7 +76,9 @@ func Download(ctx context.Context, tarballURL, expectedShasum string) (*Extracte
 	}
 
 	// Drain any remaining data so the hasher sees everything.
-	io.Copy(io.Discard, reader)
+	if _, err := io.Copy(io.Discard, reader); err != nil {
+		return nil, fmt.Errorf("hashing tarball: %w", err)
+	}
 
 	actualShasum := hex.EncodeToString(hasher.Sum(nil))
 	if expectedShasum != "" && actualShasum != expectedShasum {
