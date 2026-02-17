@@ -2,11 +2,10 @@ package intelligence
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
-
-	"github.com/kluth/npm-security-auditter/internal/analyzer"
 )
 
 // GitHubAdvisoryProvider fetches malware advisories from the GitHub Advisory Database.
@@ -24,20 +23,15 @@ func NewGitHubAdvisoryProvider() *GitHubAdvisoryProvider {
 func (p *GitHubAdvisoryProvider) Name() string { return "github-advisory-malware" }
 
 func (p *GitHubAdvisoryProvider) Fetch(ctx context.Context) ([]IntelIssue, error) {
-	// We poll GitHub's advisory aggregator. 
-	// For this implementation, we use their API to list recent reviewed npm advisories.
-	// We'll use a more general search query to avoid 404s on specific directory listings.
-	aggregatorURL := "https://api.github.com/repos/github/advisory-database/contents/advisories/github-reviewed/npm"
+	// Use the official GitHub Security Advisories API
+	aggregatorURL := "https://api.github.com/advisories?ecosystem=npm&per_page=100"
 	
-	// If the above is unreliable, we could fallback to OSV's direct data dump which is more stable for bulk.
-	// For now, we'll make it return empty instead of error if GitHub is being restrictive.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, aggregatorURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	// Set User-Agent to avoid 403s
-	req.Header.Set("User-Agent", "auditter-security-tool")
+	req.Header.Set("User-Agent", "AuditterSecurityBot/1.0")
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -47,23 +41,37 @@ func (p *GitHubAdvisoryProvider) Fetch(ctx context.Context) ([]IntelIssue, error
 
 	if resp.StatusCode != http.StatusOK {
 		// Just log and return empty to not block the whole chain
-		fmt.Printf("Warning: GitHub Advisory DB poll skipped (Status %d)\n", resp.StatusCode)
+		fmt.Printf("Warning: GitHub Advisory API poll skipped (Status %d)\n", resp.StatusCode)
 		return nil, nil
 	}
 
-	// This is a simplified fetcher. In a full implementation, we would crawl the subdirectories.
-	// For the sake of this feature, I'll implement a crawler that targets the 'malware' tag
-	// often used in these advisories.
-	
-	return []IntelIssue{
-		{
-			ID:          "GHA-MALWARE-BASE",
+	var advisories []struct {
+		GHSAID      string `json:"ghsa_id"`
+		Summary     string `json:"summary"`
+		Severity    string `json:"severity"`
+		HTMLURL     string `json:"html_url"`
+		Identifiers []struct {
+			Type  string `json:"type"`
+			Value string `json:"value"`
+		} `json:"identifiers"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&advisories); err != nil {
+		return nil, err
+	}
+
+	var issues []IntelIssue
+	for _, adv := range advisories {
+		issues = append(issues, IntelIssue{
+			ID:          adv.GHSAID,
 			Type:        IssueTypeDetectionRule,
 			Target:      "npm",
-			Description: "Base rule for GitHub-sourced malware signatures",
-			Severity:    analyzer.SeverityHigh,
-			Source:      "GitHub Advisory Database",
+			Description: adv.Summary,
+			Severity:    parseSeverity(adv.Severity),
+			Source:      adv.HTMLURL,
 			UpdatedAt:   time.Now(),
-		},
-	}, nil
+		})
+	}
+	
+	return issues, nil
 }

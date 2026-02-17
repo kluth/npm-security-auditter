@@ -1,10 +1,13 @@
 package intelligence
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -17,6 +20,7 @@ type SourceType int
 const (
 	SourceTypeJSON SourceType = iota
 	SourceTypeRSS
+	SourceTypeZip
 )
 
 // DiscoverySource represents an external intelligence source to be polled.
@@ -35,40 +39,19 @@ type UnifiedIntelProvider struct {
 
 func NewUnifiedIntelProvider() *UnifiedIntelProvider {
 	return &UnifiedIntelProvider{
-		client: &http.Client{Timeout: 30 * time.Second},
+		client: &http.Client{Timeout: 180 * time.Second}, // Very long timeout for large feeds
 		sources: []DiscoverySource{
 			// --- Vulnerability Databases ---
-			{Name: "OSV npm Feed", URL: "https://osv-vulnerabilities.storage.googleapis.com/npm/all.zip", Type: SourceTypeJSON, Category: "vulnerability"},
+			{Name: "OSV npm Feed", URL: "https://osv-vulnerabilities.storage.googleapis.com/npm/all.zip", Type: SourceTypeZip, Category: "vulnerability"},
 			{Name: "NVD (NIST)", URL: "https://nvd.nist.gov/feeds/xml/cve/misc/nvd-rss.xml", Type: SourceTypeRSS, Category: "vulnerability"},
-			
-			// --- Malware & IOC Feeds ---
-			{Name: "URLhaus (Abuse.ch)", URL: "https://urlhaus.abuse.ch/api/v1/urls/recent/", Type: SourceTypeJSON, Category: "malware"},
-			{Name: "Phylum Research Feed", URL: "https://blog.phylum.io/rss.xml", Type: SourceTypeRSS, Category: "malware"},
-			
+
 			// --- Security Research & Organizations ---
 			{Name: "Chaos Computer Club (CCC)", URL: "https://www.ccc.de/en/rss/updates.xml", Type: SourceTypeRSS, Category: "research"},
 			{Name: "GitHub Security Lab", URL: "https://securitylab.github.com/feed.xml", Type: SourceTypeRSS, Category: "research"},
 			{Name: "Google Open Source Security", URL: "https://security.googleblog.com/feeds/posts/default/-/Open%20Source%20Security", Type: SourceTypeRSS, Category: "research"},
 			{Name: "OpenSSF Feed", URL: "https://openssf.org/blog/feed/", Type: SourceTypeRSS, Category: "research"},
-			{Name: "Wiz.io Blog", URL: "https://www.wiz.io/blog/rss.xml", Type: SourceTypeRSS, Category: "research"},
-			{Name: "Checkmarx Blog", URL: "https://checkmarx.com/blog/feed/", Type: SourceTypeRSS, Category: "research"},
-			{Name: "Snyk Security Blog", URL: "https://snyk.io/blog/feed/", Type: SourceTypeRSS, Category: "research"},
-			{Name: "Unit 42 (Palo Alto)", URL: "https://unit42.paloaltonetworks.com/feed/", Type: SourceTypeRSS, Category: "research"},
-			{Name: "Mandiant Blog", URL: "https://www.mandiant.com/resources/blog/rss.xml", Type: SourceTypeRSS, Category: "research"},
-			{Name: "CISA Current Activity", URL: "https://www.cisa.gov/uscert/ncas/current-activity.xml", Type: SourceTypeRSS, Category: "research"},
-			
-			// --- Academic & Conference Research ---
-			{Name: "Black Hat News", URL: "https://www.blackhat.com/html/rss.xml", Type: SourceTypeRSS, Category: "academic"},
 			{Name: "Trail of Bits Blog", URL: "https://blog.trailofbits.com/feed/", Type: SourceTypeRSS, Category: "research"},
-			{Name: "Semgrep Research", URL: "https://semgrep.dev/blog/feed.xml", Type: SourceTypeRSS, Category: "research"},
-			{Name: "USENIX Security Blog", URL: "https://www.usenix.org/publications/login/rss.xml", Type: SourceTypeRSS, Category: "academic"},
-			{Name: "DEF CON Media", URL: "https://media.defcon.org/rss.xml", Type: SourceTypeRSS, Category: "academic"},
-			{Name: "HackerOne Blog", URL: "https://www.hackerone.com/blog.xml", Type: SourceTypeRSS, Category: "research"},
-			{Name: "Fortinet Blog", URL: "https://www.fortinet.com/rss/ir.xml", Type: SourceTypeRSS, Category: "research"},
-			{Name: "Trend Micro Blog", URL: "https://feeds.feedburner.com/TrendMicroSecurityIntelligence", Type: SourceTypeRSS, Category: "research"},
-			{Name: "Malwarebytes Labs", URL: "https://www.malwarebytes.com/blog/feed/index.xml", Type: SourceTypeRSS, Category: "malware"},
 			{Name: "Krebs on Security", URL: "https://krebsonsecurity.com/feed/", Type: SourceTypeRSS, Category: "research"},
-			{Name: "Dark Reading", URL: "https://www.darkreading.com/rss.xml", Type: SourceTypeRSS, Category: "research"},
 			{Name: "The Hacker News", URL: "http://feeds.feedburner.com/TheHackersNews", Type: SourceTypeRSS, Category: "research"},
 		},
 	}
@@ -81,7 +64,7 @@ func (p *UnifiedIntelProvider) Fetch(ctx context.Context) ([]IntelIssue, error) 
 	for _, src := range p.sources {
 		issues, err := p.fetchSource(ctx, src)
 		if err != nil {
-			// Log error but continue with other sources to ensure at least some extension
+			// Log error but continue with other sources
 			fmt.Printf("Warning: failed to poll %s: %v\n", src.Name, err)
 			continue
 		}
@@ -95,6 +78,9 @@ func (p *UnifiedIntelProvider) fetchSource(ctx context.Context, src DiscoverySou
 	if err != nil {
 		return nil, err
 	}
+
+	// Add User-Agent to avoid 403s and blocklisting
+	req.Header.Set("User-Agent", "AuditterSecurityBot/1.0 (+https://github.com/kluth/npm-security-auditter)")
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -111,47 +97,65 @@ func (p *UnifiedIntelProvider) fetchSource(ctx context.Context, src DiscoverySou
 		return p.parseRSS(resp, src)
 	case SourceTypeJSON:
 		return p.parseJSON(resp, src)
+	case SourceTypeZip:
+		return p.parseZip(resp, src)
 	}
 
 	return nil, nil
 }
 
 type rssFeed struct {
-	Items []rssItem `xml:"channel>item"`
+	Items   []rssItem `xml:"channel>item"`
+	Entries []rssItem `xml:"entry"`
 }
 
 type rssItem struct {
 	Title       string `xml:"title"`
 	Description string `xml:"description"`
 	Link        string `xml:"link"`
+	AtomLink    string `xml:"link,attr"`
 }
 
 func (p *UnifiedIntelProvider) parseRSS(resp *http.Response, src DiscoverySource) ([]IntelIssue, error) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
 	var feed rssFeed
-	if err := xml.NewDecoder(resp.Body).Decode(&feed); err != nil {
+	if err := xml.Unmarshal(body, &feed); err != nil {
 		return nil, err
 	}
 
 	var issues []IntelIssue
+	// Handle RSS items
 	for _, item := range feed.Items {
-		issues = append(issues, IntelIssue{
-			ID:          fmt.Sprintf("%s-%s", src.Name, item.Title),
-			Type:        IssueTypeDetectionRule,
-			Target:      "research",
-			Description: fmt.Sprintf("[%s] %s: %s", src.Name, item.Title, item.Link),
-			Severity:    analyzer.SeverityMedium,
-			Source:      src.URL,
-			UpdatedAt:   time.Now(),
-			Metadata:    map[string]string{"link": item.Link, "category": src.Category},
-		})
+		issues = append(issues, p.createIssue(src, item))
+	}
+	// Handle Atom entries
+	for _, entry := range feed.Entries {
+		if entry.Link == "" && entry.AtomLink != "" {
+			entry.Link = entry.AtomLink
+		}
+		issues = append(issues, p.createIssue(src, entry))
 	}
 	return issues, nil
 }
 
+func (p *UnifiedIntelProvider) createIssue(src DiscoverySource, item rssItem) IntelIssue {
+	return IntelIssue{
+		ID:          fmt.Sprintf("%s-%s", src.Name, item.Title),
+		Type:        IssueTypeDetectionRule,
+		Target:      "research",
+		Description: fmt.Sprintf("[%s] %s: %s", src.Name, item.Title, item.Link),
+		Severity:    analyzer.SeverityMedium,
+		Source:      src.URL,
+		UpdatedAt:   time.Now(),
+		Metadata:    map[string]string{"link": item.Link, "category": src.Category},
+	}
+}
+
 func (p *UnifiedIntelProvider) parseJSON(resp *http.Response, src DiscoverySource) ([]IntelIssue, error) {
-	// Generic JSON parser for demonstration. In a full implementation, 
-	// we'd have specific schemas for OSV, URLhaus, etc.
-	// For now, we extract top-level strings that look like IDs or descriptions.
 	var raw interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, err
@@ -168,4 +172,39 @@ func (p *UnifiedIntelProvider) parseJSON(resp *http.Response, src DiscoverySourc
 			UpdatedAt:   time.Now(),
 		},
 	}, nil
+}
+
+func (p *UnifiedIntelProvider) parseZip(resp *http.Response, src DiscoverySource) ([]IntelIssue, error) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return nil, err
+	}
+
+	var issues []IntelIssue
+	// For OSV, each file is a JSON advisory. We only take the first few or a summary
+	// for this simple unified provider to avoid memory bloat.
+	count := 0
+	for _, f := range r.File {
+		if count > 100 { // Limit to 100 entries for the unified poller
+			break
+		}
+		if !f.FileInfo().IsDir() && (bytes.HasSuffix([]byte(f.Name), []byte(".json"))) {
+			issues = append(issues, IntelIssue{
+				ID:          fmt.Sprintf("%s-%s", src.Name, f.Name),
+				Type:        IssueTypeDetectionRule,
+				Target:      "npm",
+				Description: fmt.Sprintf("OSV Advisory: %s", f.Name),
+				Severity:    analyzer.SeverityHigh,
+				Source:      src.URL,
+				UpdatedAt:   time.Now(),
+			})
+			count++
+		}
+	}
+	return issues, nil
 }

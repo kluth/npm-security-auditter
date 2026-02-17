@@ -1,6 +1,9 @@
 package registry
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // PackageMetadata represents the full metadata for an npm package.
 type PackageMetadata struct {
@@ -13,6 +16,36 @@ type PackageMetadata struct {
 	Repository  *Repository               `json:"repository,omitempty"`
 	License     string                    `json:"license"`
 	Readme      string                    `json:"readme"`
+}
+
+// Deprecated represents a deprecation message, which can be a string or a boolean in some registries.
+type Deprecated string
+
+// UnmarshalJSON handles both string and boolean values for the deprecated field.
+func (d *Deprecated) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		*d = Deprecated(s)
+		return nil
+	}
+
+	var boolean bool
+	if err := json.Unmarshal(b, &boolean); err != nil {
+		// If it's neither a string nor a bool, it might be null or something else.
+		// We treat it as not deprecated.
+		*d = ""
+		return nil
+	}
+
+	if boolean {
+		*d = "true"
+	} else {
+		*d = ""
+	}
+	return nil
 }
 
 // PackageVersion represents a specific version of a package.
@@ -29,7 +62,7 @@ type PackageVersion struct {
 	Repository       *Repository       `json:"repository,omitempty"`
 	License          string            `json:"license"`
 	Homepage         string            `json:"homepage,omitempty"`
-	Deprecated       string            `json:"deprecated,omitempty"`
+	Deprecated       Deprecated        `json:"deprecated,omitempty"`
 	HasInstallScript bool              `json:"hasInstallScript,omitempty"`
 	Binary           interface{}       `json:"binary,omitempty"`
 	GypFile          bool              `json:"gypfile,omitempty"`
