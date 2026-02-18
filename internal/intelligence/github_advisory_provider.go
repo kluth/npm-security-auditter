@@ -5,10 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
-
-	"github.com/kluth/npm-security-auditter/internal/analyzer"
 )
 
 // GitHubAdvisoryProvider fetches malware advisories from the GitHub Advisory Database.
@@ -77,20 +74,4 @@ func (p *GitHubAdvisoryProvider) Fetch(ctx context.Context) ([]IntelIssue, error
 	}
 
 	return issues, nil
-}
-
-func parseSeverity(s string) analyzer.Severity {
-	s = strings.ToLower(s)
-	switch s {
-	case "critical":
-		return analyzer.SeverityCritical
-	case "high":
-		return analyzer.SeverityHigh
-	case "moderate", "medium":
-		return analyzer.SeverityMedium
-	case "low":
-		return analyzer.SeverityLow
-	default:
-		return analyzer.SeverityLow
-	}
 }

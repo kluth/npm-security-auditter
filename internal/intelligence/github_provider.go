@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-
-	"github.com/kluth/npm-security-auditter/internal/analyzer"
 )
 
 // GitHubProvider fetches malicious package lists from a GitHub repository.
@@ -75,17 +73,4 @@ func (p *GitHubProvider) Fetch(ctx context.Context) ([]IntelIssue, error) {
 	}
 
 	return issues, nil
-}
-
-func parseSeverity(s string) analyzer.Severity {
-	switch s {
-	case "critical":
-		return analyzer.SeverityCritical
-	case "high":
-		return analyzer.SeverityHigh
-	case "medium":
-		return analyzer.SeverityMedium
-	default:
-		return analyzer.SeverityLow
-	}
 }

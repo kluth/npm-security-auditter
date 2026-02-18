@@ -2,6 +2,7 @@ package intelligence
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/kluth/npm-security-auditter/internal/analyzer"
@@ -43,4 +44,20 @@ type Data struct {
 // Stale returns true if the data is older than the given duration.
 func (d *Data) Stale(maxAge time.Duration) bool {
 	return time.Since(d.UpdatedAt) > maxAge
+}
+
+func parseSeverity(s string) analyzer.Severity {
+	s = strings.ToLower(s)
+	switch s {
+	case "critical":
+		return analyzer.SeverityCritical
+	case "high":
+		return analyzer.SeverityHigh
+	case "moderate", "medium":
+		return analyzer.SeverityMedium
+	case "low":
+		return analyzer.SeverityLow
+	default:
+		return analyzer.SeverityLow
+	}
 }
