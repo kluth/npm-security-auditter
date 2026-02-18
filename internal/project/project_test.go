@@ -133,8 +133,8 @@ func TestParsePackageLock(t *testing.T) {
 			}
 		}`
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
+			t.Fatal(err)
+		}
 
 		deps, err := ParsePackageLock(path)
 		if err != nil {
@@ -170,8 +170,8 @@ func TestParsePackageLock(t *testing.T) {
 			}
 		}`
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
+			t.Fatal(err)
+		}
 
 		deps, err := ParsePackageLock(path)
 		if err != nil {
@@ -203,8 +203,8 @@ func TestParsePackageLock(t *testing.T) {
 			}
 		}`
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
+			t.Fatal(err)
+		}
 
 		deps, err := ParsePackageLock(path)
 		if err != nil {
@@ -226,8 +226,8 @@ func TestParsePackageLock(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "package-lock.json")
 		if err := os.WriteFile(path, []byte(`{invalid`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+			t.Fatal(err)
+		}
 
 		_, err := ParsePackageLock(path)
 		if err == nil {

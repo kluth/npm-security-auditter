@@ -113,7 +113,7 @@ func (m *Manager) Update(ctx context.Context) error {
 }
 
 // AutoUpdate triggers an update only if the data is older than the threshold.
-func (m *Manager) AutoUpdate(ctx context.Context, threshold time.Duration) {
+func (m *Manager) AutoUpdate(ctx context.Context, threshold time.Duration) error {
 	m.mu.RLock()
 	stale := m.data.Stale(threshold)
 	m.mu.RUnlock()
@@ -122,8 +122,9 @@ func (m *Manager) AutoUpdate(ctx context.Context, threshold time.Duration) {
 		// Run update in background context or synchronously depending on caller preference
 		// For CLI tool, we usually want it to be fast, but security data is critical.
 		// We'll run it synchronously for now but with a shorter timeout if called via AutoUpdate.
-		_ = m.Update(ctx)
+		return m.Update(ctx)
 	}
+	return nil
 }
 
 // GetIssuesByType returns all issues of a specific type.

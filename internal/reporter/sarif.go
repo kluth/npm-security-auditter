@@ -11,14 +11,14 @@ import (
 // Schema: https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json
 
 type sarifLog struct {
-	Version string      `json:"version"`
-	Schema  string      `json:"$schema"`
-	Runs    []sarifRun  `json:"runs"`
+	Version string     `json:"version"`
+	Schema  string     `json:"$schema"`
+	Runs    []sarifRun `json:"runs"`
 }
 
 type sarifRun struct {
-	Tool      sarifTool        `json:"tool"`
-	Results   []sarifResult    `json:"results"`
+	Tool    sarifTool     `json:"tool"`
+	Results []sarifResult `json:"results"`
 }
 
 type sarifTool struct {
@@ -26,10 +26,10 @@ type sarifTool struct {
 }
 
 type sarifDriver struct {
-	Name            string       `json:"name"`
-	Version         string       `json:"version"`
-	InformationUri  string       `json:"informationUri"`
-	Rules           []sarifRule  `json:"rules"`
+	Name           string      `json:"name"`
+	Version        string      `json:"version"`
+	InformationUri string      `json:"informationUri"`
+	Rules          []sarifRule `json:"rules"`
 }
 
 type sarifRule struct {
@@ -47,10 +47,10 @@ type sarifRuleProperties struct {
 }
 
 type sarifResult struct {
-	RuleID      string          `json:"ruleId"`
-	Level       string          `json:"level"` // error, warning, note, none
-	Message     sarifMessage    `json:"message"`
-	Locations   []sarifLocation `json:"locations,omitempty"`
+	RuleID       string            `json:"ruleId"`
+	Level        string            `json:"level"` // error, warning, note, none
+	Message      sarifMessage      `json:"message"`
+	Locations    []sarifLocation   `json:"locations,omitempty"`
 	Fingerprints map[string]string `json:"fingerprints,omitempty"`
 }
 
@@ -92,23 +92,23 @@ func (r *Reporter) renderSARIF(report Report) error {
 
 	// Map rules from analyzers
 	ruleMap := make(map[string]bool)
-	
+
 	allFindings := collectFindings(report.Results)
-	
+
 	for _, f := range allFindings {
 		ruleID := f.Analyzer
 		if !ruleMap[ruleID] {
 			run.Tool.Driver.Rules = append(run.Tool.Driver.Rules, sarifRule{
-				ID: ruleID,
-				Name: f.Title,
+				ID:               ruleID,
+				Name:             f.Title,
 				ShortDescription: sarifMessage{Text: f.Title},
-				FullDescription: sarifMessage{Text: f.Description},
+				FullDescription:  sarifMessage{Text: f.Description},
 				Help: sarifMessage{
-					Text: fmt.Sprintf("%s\n\nRemediation: %s", f.Description, f.Remediation),
+					Text:     fmt.Sprintf("%s\n\nRemediation: %s", f.Description, f.Remediation),
 					Markdown: fmt.Sprintf("**%s**\n\n%s\n\n### Remediation\n%s", f.Title, f.Description, f.Remediation),
 				},
 				Properties: sarifRuleProperties{
-					Tags: []string{"security", "npm", "supply-chain"},
+					Tags:     []string{"security", "npm", "supply-chain"},
 					Severity: getSarifSeverityScore(f.Severity),
 				},
 			})

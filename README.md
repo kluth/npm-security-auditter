@@ -7,13 +7,11 @@
 **Deep forensic analysis for the npm supply chain.**\
 **Detect malware, backdoors, and supply chain attacks before they reach production.**
 
-[![CI](https://github.com/kluth/npm-security-auditter/actions/workflows/ci.yml/badge.svg)](https://github.com/kluth/npm-security-auditter/actions/workflows/ci.yml)
-[![Release](https://github.com/kluth/npm-security-auditter/actions/workflows/release.yml/badge.svg)](https://github.com/kluth/npm-security-auditter/actions/workflows/release.yml)
+[![Pipeline Status](https://github.com/kluth/npm-security-auditter/actions/workflows/pipeline.yml/badge.svg)](https://github.com/kluth/npm-security-auditter/actions/workflows/pipeline.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/kluth/npm-security-auditter)](https://goreportcard.com/report/github.com/kluth/npm-security-auditter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go&logoColor=white)](https://github.com/kluth/npm-security-auditter)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white)](https://github.com/kluth/npm-security-auditter)
 [![Latest Release](https://img.shields.io/github/v/release/kluth/npm-security-auditter?color=blue)](https://github.com/kluth/npm-security-auditter/releases)
-[![Tests](https://img.shields.io/badge/tests-381_passing-brightgreen)](#)
 
 ---
 
@@ -52,32 +50,32 @@ To minimize noise in large, legitimate utility libraries (like `lodash`), auditt
 **macOS:**
 ```bash
 # Download the Universal PKG from the latest release
-curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_v2.1.0_macOS_Universal.pkg
-sudo installer -pkg auditter_v2.1.0_macOS_Universal.pkg -target /
+curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_latest_macOS_Universal.pkg
+sudo installer -pkg auditter_latest_macOS_Universal.pkg -target /
 ```
 
 **Debian / Ubuntu:**
 ```bash
-curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_2.1.0_linux_amd64.deb
-sudo dpkg -i auditter_2.1.0_linux_amd64.deb
+curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_latest_linux_amd64.deb
+sudo dpkg -i auditter_latest_linux_amd64.deb
 ```
 
 **Fedora / RHEL:**
 ```bash
-curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_2.1.0_linux_amd64.rpm
-sudo rpm -i auditter_2.1.0_linux_amd64.rpm
+curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_latest_linux_amd64.rpm
+sudo rpm -i auditter_latest_linux_amd64.rpm
 ```
 
 **Arch Linux:**
 ```bash
-curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_2.1.0_linux_amd64.pkg.tar.zst
-sudo pacman -U auditter_2.1.0_linux_amd64.pkg.tar.zst
+curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_latest_linux_amd64.pkg.tar.zst
+sudo pacman -U auditter_latest_linux_amd64.pkg.tar.zst
 ```
 
 **Alpine Linux:**
 ```bash
-curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_2.1.0_linux_amd64.apk
-sudo apk add --allow-untrusted auditter_2.1.0_linux_amd64.apk
+curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_latest_linux_amd64.apk
+sudo apk add --allow-untrusted auditter_latest_linux_amd64.apk
 ```
 
 **Windows:**\
@@ -85,7 +83,7 @@ Download the [installer (.exe)](https://github.com/kluth/npm-security-auditter/r
 
 ### From source
 
-Requires Go 1.23+:
+Requires Go 1.24+:
 ```bash
 go install github.com/kluth/npm-security-auditter/cmd/auditter@latest
 ```
@@ -297,8 +295,8 @@ The analyzers are based on techniques from:
 ```yaml
 - name: Security audit
   run: |
-    curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_2.1.0_linux_amd64.tar.gz
-    tar xzf auditter_2.1.0_linux_amd64.tar.gz
+    curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_latest_linux_amd64.tar.gz
+    tar xzf auditter_latest_linux_amd64.tar.gz
     ./auditter -p package-lock.json -s high --json > audit.json
 
 - name: Fail on critical findings
@@ -313,7 +311,7 @@ The analyzers are based on techniques from:
 
 ```yaml
 security_audit:
-  image: golang:1.23
+  image: golang:1.24
   script:
     - go install github.com/kluth/npm-security-auditter/cmd/auditter@latest
     - auditter -p package-lock.json -s high --json > audit.json

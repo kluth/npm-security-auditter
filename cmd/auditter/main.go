@@ -14,6 +14,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
+
 	"github.com/kluth/npm-security-auditter/internal/ai"
 	"github.com/kluth/npm-security-auditter/internal/analyzer"
 	"github.com/kluth/npm-security-auditter/internal/intelligence"
@@ -23,8 +26,6 @@ import (
 	"github.com/kluth/npm-security-auditter/internal/reporter"
 	"github.com/kluth/npm-security-auditter/internal/reputation"
 	"github.com/kluth/npm-security-auditter/internal/tui"
-	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -192,7 +193,9 @@ func runAudit(args []string) error {
 	intelMgr.AddProvider(intelligence.NewGitHubProvider(""))
 	intelMgr.AddProvider(intelligence.NewGitHubAdvisoryProvider())
 	intelMgr.AddProvider(intelligence.NewUnifiedIntelProvider())
-	intelMgr.AutoUpdate(context.Background(), 24*time.Hour)
+	if err := intelMgr.AutoUpdate(context.Background(), 24*time.Hour); err != nil {
+		stderrPrintf("Warning: threat intelligence auto-update failed: %v\n", err)
+	}
 
 	rep := reporter.NewWithOptions(out, format, reporter.Language(lang), verbose)
 	projectReport := buildProjectReport(deps, sev, registry.NewClient(registryURL), buildAnalyzers(intelMgr))
@@ -201,7 +204,9 @@ func runAudit(args []string) error {
 		return err
 	}
 	if aiSummary && len(projectReport.Reports) > 0 {
-		renderAISummary(out, projectReport, deps)
+		if err := renderAISummary(out, projectReport, deps); err != nil {
+			stderrPrintf("Warning: failed to render AI summary: %v\n", err)
+		}
 	}
 	if failOn != "" {
 		return checkFailOn(projectReport, failOn)
@@ -470,28 +475,35 @@ func renderReport(rep *reporter.Reporter, projectReport reporter.ProjectReport, 
 	return nil
 }
 
-func renderAISummary(out io.Writer, projectReport reporter.ProjectReport, deps []project.Dependency) {
+func renderAISummary(out io.Writer, projectReport reporter.ProjectReport, deps []project.Dependency) error {
 	var jsonBuf strings.Builder
 	jsonEnc := json.NewEncoder(&jsonBuf)
 	jsonEnc.SetIndent("", "  ")
+	var err error
 	if isMultiPackageAudit(deps) {
-		_ = jsonEnc.Encode(projectReport)
+		err = jsonEnc.Encode(projectReport)
 	} else {
-		_ = jsonEnc.Encode(projectReport.Reports[0])
+		err = jsonEnc.Encode(projectReport.Reports[0])
+	}
+	if err != nil {
+		return fmt.Errorf("failed to encode report for AI summary: %w", err)
 	}
 
 	summary, err := ai.GenerateSummary([]byte(jsonBuf.String()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\n%sAI Summary unavailable: %s%s\n", "\033[33m", err, "\033[0m")
-	} else {
-		fmt.Fprintf(out, "\n%s╔══════════════════════════════════════════════════════════════════════╗%s\n", "\033[1;36m", "\033[0m")
-		fmt.Fprintf(out, "%s║  AI Analysis (Gemini)                                                ║%s\n", "\033[1;36m", "\033[0m")
-		fmt.Fprintf(out, "%s╚══════════════════════════════════════════════════════════════════════╝%s\n", "\033[1;36m", "\033[0m")
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, summary)
-		fmt.Fprintln(out)
+		return nil // Not a fatal error
 	}
+
+	fmt.Fprintf(out, "\n%s╔══════════════════════════════════════════════════════════════════════╗%s\n", "\033[1;36m", "\033[0m")
+	fmt.Fprintf(out, "%s║  AI Analysis (Gemini)                                                ║%s\n", "\033[1;36m", "\033[0m")
+	fmt.Fprintf(out, "%s╚══════════════════════════════════════════════════════════════════════╝%s\n", "\033[1;36m", "\033[0m")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, summary)
+	fmt.Fprintln(out)
+	return nil
 }
+
 func hasInstallScripts(v *registry.PackageVersion) bool {
 	if v.HasInstallScript {
 		return true

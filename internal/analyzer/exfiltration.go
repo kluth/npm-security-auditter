@@ -209,4 +209,3 @@ func (a *ExfiltrationAnalyzer) detectURLConstruction(content, filename string) [
 
 	return findings
 }
-
