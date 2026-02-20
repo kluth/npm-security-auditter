@@ -99,7 +99,6 @@ const (
 // Model is the top-level Bubble Tea model.
 type Model struct {
 	screen       Screen
-	prevScreen   Screen
 	activePane   Pane // Track focus in dashboard
 	width        int
 	height       int
@@ -262,21 +261,6 @@ func clamp(v, lo, hi int) int {
 		return hi
 	}
 	return v
-}
-
-func severityColor(sev string) string {
-	switch strings.ToLower(sev) {
-	case "critical":
-		return "\033[91m" // bright red
-	case "high":
-		return "\033[31m" // red
-	case "medium":
-		return "\033[33m" // yellow
-	case "low":
-		return "\033[36m" // cyan
-	default:
-		return "\033[37m" // white
-	}
 }
 
 func riskScoreBar(score float64, width int) string {

@@ -26,7 +26,7 @@ func buildClient(cfg SettingsConfig) *registry.Client {
 
 func buildAnalyzers(client *registry.Client) []analyzer.Analyzer {
 	intelMgr := intelligence.NewManager("")
-	intelMgr.Load()
+	_ = intelMgr.Load() // Ignore error, continue with empty intel if needed
 
 	// Reconstruct the default analyzers list
 	analyzers := []analyzer.Analyzer{

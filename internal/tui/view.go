@@ -214,45 +214,6 @@ func (m Model) viewThreatIntel() string {
 		lipgloss.NewStyle().Padding(1, 2).Render(b.String()))
 }
 
-func (m Model) viewResults() string {
-	if m.results == nil {
-		content := BoxStyle.Width(m.width - 6).Render(
-			SubtitleStyle.Render("No audit results yet. Run an audit first."))
-		return lipgloss.Place(m.width, m.height-2, lipgloss.Left, lipgloss.Top,
-			lipgloss.NewStyle().Padding(1, 2).Render(
-				TitleStyle.Render("Results")+"\n"+content))
-	}
-
-	if m.results.Error != nil {
-		content := BoxStyle.Width(m.width - 6).Render(
-			ErrorStyle.Render("Error: "+m.results.Error.Error()))
-		return lipgloss.Place(m.width, m.height-2, lipgloss.Left, lipgloss.Top,
-			lipgloss.NewStyle().Padding(1, 2).Render(
-				TitleStyle.Render("Results")+"\n"+content))
-	}
-
-	var b strings.Builder
-	b.WriteString(TitleStyle.Render("Audit Results"))
-	b.WriteString("\n\n")
-
-	// Summary card
-	summary := m.viewResultsSummary()
-	b.WriteString(BoxStyle.Width(m.width - 6).Render(summary))
-	b.WriteString("\n\n")
-
-	// Report saved indicator
-	if m.reportPath != "" {
-		b.WriteString(SuccessStyle.Render("Report saved to: "+m.reportPath))
-		b.WriteString("\n\n")
-	}
-
-	// Findings list
-	b.WriteString(m.findingsList.View())
-
-	return lipgloss.Place(m.width, m.height-2, lipgloss.Left, lipgloss.Top,
-		lipgloss.NewStyle().Padding(1, 2).Render(b.String()))
-}
-
 func (m Model) viewResultsSummary() string {
 	r := m.results
 	var b strings.Builder
@@ -272,9 +233,7 @@ func (m Model) viewResultsSummary() string {
 	scoreStr := fmt.Sprintf("%.0f/100", r.RiskScore)
 	barWidth := 30
 	bar := riskScoreBar(r.RiskScore, barWidth)
-	b.WriteString(RiskBarStyle(r.RiskScore).Render(bar))
-	b.WriteString(" ")
-	b.WriteString(DetailValueStyle.Render(scoreStr))
+	b.WriteString(RiskBarStyle(r.RiskScore).Render(bar) + " " + DetailValueStyle.Render(scoreStr))
 	b.WriteString("\n")
 
 	// Severity breakdown
@@ -294,28 +253,6 @@ func (m Model) viewResultsSummary() string {
 	b.WriteString(SevLowStyle.Render(fmt.Sprintf("%d low", counts["low"])))
 
 	return b.String()
-}
-
-func (m Model) viewResultDetail() string {
-	if m.results == nil || len(m.results.Findings) == 0 {
-		return ""
-	}
-
-	var b strings.Builder
-	f := m.results.Findings[m.selectedIdx]
-	nav := fmt.Sprintf("Finding %d of %d", m.selectedIdx+1, len(m.results.Findings))
-	b.WriteString(TitleStyle.Render("Finding Detail"))
-	b.WriteString("  ")
-	b.WriteString(SubtitleStyle.Render(nav))
-	b.WriteString("\n\n")
-
-	detailBox := BoxStyle.Width(m.width - 6).Render(m.detailView.View())
-	b.WriteString(detailBox)
-
-	_ = f // used in renderFindingDetail
-
-	return lipgloss.Place(m.width, m.height-2, lipgloss.Left, lipgloss.Top,
-		lipgloss.NewStyle().Padding(1, 2).Render(b.String()))
 }
 
 func (m Model) renderFindingDetail(idx int) string {
