@@ -1,5 +1,3 @@
-import { motion } from 'framer-motion';
-
 interface TerminalWindowProps {
   title: string;
   children: React.ReactNode;
