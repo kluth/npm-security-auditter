@@ -76,7 +76,7 @@ export function Mcp() {
                   <div className="text-purple-400">User:</div>
                   <div className="text-neutral-300 mb-2 italic">"Audit the 'express' package for any security risks."</div>
                   <div className="text-blue-400">Claude:</div>
-                  <div className="text-neutral-500">Calling tool: audit_package({"package_name": "express"})...</div>
+                  <div className="text-neutral-500">Calling tool: audit_package(&#123;"package_name": "express"&#125;)...</div>
                 </div>
               </div>
             </motion.div>
