@@ -2,6 +2,7 @@ import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { Features } from './components/Features';
 import { TuiShowcase } from './components/TuiShowcase';
+import { Mcp } from './components/Mcp';
 import { Analyzers } from './components/Analyzers';
 import { Usage } from './components/Usage';
 import { CiCd } from './components/CiCd';
@@ -16,6 +17,7 @@ function App() {
         <Hero />
         <Features />
         <TuiShowcase />
+        <Mcp />
         <Analyzers />
         <Usage />
         <CiCd />

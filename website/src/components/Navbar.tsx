@@ -13,6 +13,7 @@ export function Navbar() {
             <div className="ml-10 flex items-baseline space-x-8">
               <a href="#features" className="text-neutral-300 hover:text-white transition-colors">Features</a>
               <a href="#tui" className="text-neutral-300 hover:text-white transition-colors">TUI</a>
+              <a href="#mcp" className="text-neutral-300 hover:text-white transition-colors">MCP</a>
               <a href="#analyzers" className="text-neutral-300 hover:text-white transition-colors">Analyzers</a>
               <a href="#usage" className="text-neutral-300 hover:text-white transition-colors">Usage</a>
               <a href="#cicd" className="text-neutral-300 hover:text-white transition-colors">CI/CD</a>
