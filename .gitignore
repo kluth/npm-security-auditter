@@ -5,3 +5,11 @@ node_modules/
 *.out
 project-report.txt
 stdout
+*.pdf
+*.txt
+.DS_Store
+.idea/
+.vscode/
+bin/
+pkg/
+vendor/
