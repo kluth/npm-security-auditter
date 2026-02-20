@@ -7,11 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -19,12 +16,10 @@ import (
 
 	"github.com/kluth/npm-security-auditter/internal/ai"
 	"github.com/kluth/npm-security-auditter/internal/analyzer"
+	"github.com/kluth/npm-security-auditter/internal/audit"
 	"github.com/kluth/npm-security-auditter/internal/intelligence"
 	"github.com/kluth/npm-security-auditter/internal/policy"
-	"github.com/kluth/npm-security-auditter/internal/project"
-	"github.com/kluth/npm-security-auditter/internal/registry"
 	"github.com/kluth/npm-security-auditter/internal/reporter"
-	"github.com/kluth/npm-security-auditter/internal/reputation"
 	"github.com/kluth/npm-security-auditter/internal/tui"
 )
 
@@ -95,6 +90,8 @@ func main() {
 		RunE:  runAuditTop,
 	})
 
+	rootCmd.AddCommand(newMcpCmd())
+
 	rootCmd.Flags().StringVarP(&registryURL, "registry", "r", "", "npm registry URL (default: https://registry.npmjs.org)")
 	rootCmd.Flags().BoolVar(&jsonOutput, "json", false, "output results as JSON (alias for --format json)")
 	rootCmd.Flags().StringVar(&format, "format", "terminal", "output format (terminal, json, markdown, html, csv, pdf)")
@@ -159,10 +156,18 @@ func loadConfiguration(cmd *cobra.Command) error {
 }
 
 func runAudit(args []string) error {
-	deps, err := resolveDependencies(args)
-	if err != nil {
-		return err
+	// Determine target
+	var target string
+	if len(args) > 0 {
+		target = args[0]
+	} else if projectPath != "" {
+		target = projectPath
+	} else if auditNodeModules {
+		target = "." // current dir for node_modules
+	} else {
+		return fmt.Errorf("package name, --project path, or --node-modules is required")
 	}
+
 	if jsonOutput {
 		format = "json"
 	}
@@ -178,30 +183,66 @@ func runAudit(args []string) error {
 		defer cleanup()
 	}
 
-	intelMgr := intelligence.NewManager("")
-	if err := intelMgr.Load(); err != nil {
-		stderrPrintf("Warning: failed to load threat intelligence: %v\n", err)
+	// Configure Runner
+	cfg := audit.Config{
+		RegistryURL:      registryURL,
+		Timeout:          timeout,
+		Concurrency:      concurrency,
+		MinSeverity:      sev,
+		NoSandbox:        noSandbox,
+		AuditNodeModules: auditNodeModules,
+		ProjectPath:      projectPath,
+		Verbose:          verbose,
 	}
 
-	// Auto-update if data is older than 24 hours
-	intelMgr.AddProvider(intelligence.NewGitHubProvider(""))
-	intelMgr.AddProvider(intelligence.NewGitHubAdvisoryProvider())
-	intelMgr.AddProvider(intelligence.NewUnifiedIntelProvider())
-	if err := intelMgr.AutoUpdate(context.Background(), 24*time.Hour); err != nil {
-		stderrPrintf("Warning: threat intelligence auto-update failed: %v\n", err)
+	runner := audit.NewRunner(cfg)
+	
+	// Pre-load dependencies if just checking single package or specific cases?
+	// The runner handles resolution now, so we just pass the target.
+	// But wait, resolveDependencies handled some logic.
+	// If projectPath is set, Runner uses it from cfg.ProjectPath.
+	// If auditNodeModules is set, Runner uses it.
+	// If args[0] is passed, we should pass it to Run.
+	
+	// However, `resolveDependencies` in main.go returned []Dependency.
+	// Runner.Run takes a nameOrPath.
+	// Let's rely on Runner's logic which matches what we moved there.
+	
+	// IMPORTANT: Runner uses cfg.ProjectPath or cfg.AuditNodeModules preferentially.
+	// If neither, it treats nameOrPath as package name.
+	
+	// If both projectPath and args are missing, Runner.Run(ctx, "") might fail if config doesn't specify project.
+	// But main logic ensures we have a target.
+
+	ctx := context.Background()
+	projectReport, err := runner.Run(ctx, target)
+	if err != nil {
+		return err
 	}
 
 	rep := reporter.NewWithOptions(out, format, reporter.Language(lang), verbose)
-	projectReport := buildProjectReport(deps, sev, registry.NewClient(registryURL), buildAnalyzers(intelMgr))
-
-	if err := renderReport(rep, projectReport, deps); err != nil {
+	
+	// We need deps list for AI summary or just use the report?
+	// The new renderAISummary uses projectReport directly mostly.
+	// But it checks `isMultiPackageAudit(deps)`.
+	// We can infer multi-package from len(projectReport.Reports) or config.
+	
+	// Reconstruct simplified deps for legacy compatibility if needed, or update render functions.
+	// Actually, let's just use what we have.
+	// `renderReport` and `renderAISummary` need `[]project.Dependency`.
+	// We can synthesize it from the report if needed, or just change the signature.
+	// Let's change the signature of render functions to not need `deps`.
+	
+	if err := renderReport(rep, projectReport); err != nil {
 		return err
 	}
+	
 	if (aiSummary || aiClaude) && len(projectReport.Reports) > 0 {
-		if err := renderAISummary(out, projectReport, deps); err != nil {
+		if err := renderAISummary(out, projectReport); err != nil {
 			stderrPrintf("Warning: failed to render AI summary: %v\n", err)
 		}
 	}
+	
 	if failOn != "" {
 		return checkFailOn(projectReport, failOn)
 	}
@@ -229,7 +270,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if listAnalyzers {
-		printAnalyzerList(os.Stdout)
+		audit.PrintAnalyzerList(os.Stdout)
 		return nil
 	}
 	if interactive {
@@ -281,27 +322,57 @@ func runAuditTop(cmd *cobra.Command, args []string) error {
 		defer cleanup()
 	}
 
-	intelMgr := intelligence.NewManager("")
-	if err := intelMgr.Load(); err != nil {
-		stderrPrintf("Warning: failed to load threat intelligence: %v\n", err)
+	// We can't use audit.Runner directly for "Top Repos" easily because Runner expects project/node_modules/single package.
+	// But we can manually construct the runner's behavior or just add "Batch Audit" to Runner?
+	// Actually, Runner.RunTopRepos? Or just use Runner.executeAudit if we expose it?
+	// It's not exported.
+	// Let's manually run it using the new internal/audit components if possible, or just duplicate the loop here for now to avoid over-engineering the Runner for this specific case.
+	// Or better: Let's expose `Runner.AuditPackage`?
+	// No, let's keep it simple.
+	
+	// Refactor: We can use the Runner if we change how it accepts input.
+	// For now, I will use the Runner's internal components via a helper or just duplicate the "loop over deps" logic here using `audit.NewRunner` config but manual execution?
+	// No, `Runner` encapsulates the client and intel.
+	
+	// Let's add `AuditBatch` to Runner.
+	// I'll skip that for now and just instantiate `audit.NewRunner` and use a new method I'll add to `audit` package: `RunBatch`.
+	// For now, since I can't edit `audit.go` in this request (I already wrote it), I will have to add `RunBatch` to `audit.go` in a separate tool call if I want to use it.
+	// Or I can just manually do what `executeAudit` does, but I can't access `auditPackage` (unexported).
+	
+	// OK, I need to export `AuditPackage` or add `RunBatch` to `audit.go`.
+	// I will add `RunBatch` to `audit.go` in next step.
+	// For this `replace` call, I will assume `runner.RunBatch(ctx, deps)` exists.
+	
+	cfg := audit.Config{
+		RegistryURL: registryURL,
+		Timeout:     timeout,
+		Concurrency: concurrency,
+		MinSeverity: sev,
+		NoSandbox:   noSandbox,
+		Verbose:     verbose,
 	}
+	runner := audit.NewRunner(cfg)
+	
+	projectReport, err := runner.RunBatch(context.Background(), deps)
+	if err != nil {
+		return err
+	}
+	projectReport.ProjectName = category
 
 	rep := reporter.NewWithOptions(out, format, reporter.Language(lang), verbose)
-	projectReport := buildProjectReport(deps, sev, registry.NewClient(registryURL), buildAnalyzers(intelMgr))
-	projectReport.ProjectName = category
 
 	if format == "terminal" && !verbose {
 		if err := rep.RenderTopList(projectReport); err != nil {
 			return err
 		}
 	} else {
-		if err := renderReport(rep, projectReport, deps); err != nil {
+		if err := renderReport(rep, projectReport); err != nil {
 			return err
 		}
 	}
 
 	if (aiSummary || aiClaude) && len(projectReport.Reports) > 0 {
-		if err := renderAISummary(out, projectReport, deps); err != nil {
+		if err := renderAISummary(out, projectReport); err != nil {
 			stderrPrintf("Warning: failed to render AI summary: %v\n", err)
 		}
 	}
@@ -311,36 +382,6 @@ func runAuditTop(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
-}
-
-func resolveDependencies(args []string) ([]project.Dependency, error) {
-	if projectPath != "" {
-		if strings.HasSuffix(projectPath, "package-lock.json") {
-			deps, err := project.ParsePackageLock(projectPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse project file: %w", err)
-			}
-			return deps, nil
-		} else if strings.HasSuffix(projectPath, "package.json") {
-			deps, err := project.ParsePackageJSON(projectPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse project file: %w", err)
-			}
-			return deps, nil
-		}
-		return nil, fmt.Errorf("invalid project path: must be package.json or package-lock.json")
-	}
-	if auditNodeModules {
-		deps, err := project.AuditNodeModules(".")
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan node_modules: %w", err)
-		}
-		return deps, nil
-	}
-	if len(args) > 0 {
-		return []project.Dependency{{Name: args[0]}}, nil
-	}
-	return nil, fmt.Errorf("package name, --project path, or --node-modules is required")
 }
 
 func resolveMinSeverity() (analyzer.Severity, error) {
@@ -361,177 +402,12 @@ func resolveOutput() (io.Writer, func(), error) {
 	return f, func() { f.Close() }, nil
 }
 
-func buildAnalyzers(intelMgr *intelligence.Manager) []analyzer.Analyzer {
-	analyzers := []analyzer.Analyzer{
-		analyzer.NewVulnAnalyzer(),
-		analyzer.NewIntelAnalyzer(intelMgr),
-		analyzer.NewScriptsAnalyzer(),
-		analyzer.NewTyposquatAnalyzer(),
-		analyzer.NewSlopsquattingAnalyzer(),
-		analyzer.NewMaintainerAnalyzer(),
-		analyzer.NewMetadataAnalyzer(),
-		analyzer.NewDepsAnalyzer(),
-		analyzer.NewRemoteDepsAnalyzer(),
-		analyzer.NewBinaryAnalyzer(),
-		analyzer.NewProvenanceAnalyzer(),
-		analyzer.NewTarballAnalyzer(),
-		analyzer.NewRepoVerifierAnalyzer(),
-		analyzer.NewIssuesAnalyzer(),
-		analyzer.NewShellScriptAnalyzer(),
-		analyzer.NewScorecardAnalyzer(),
-		analyzer.NewCommitHistoryAnalyzer(),
-		analyzer.NewDownloadAnalyzer(),
-		analyzer.NewManifestConfusionAnalyzer(),
-		analyzer.NewVersionAnomalyAnalyzer(),
-		analyzer.NewStarjackingAnalyzer(),
-		analyzer.NewCommunityTrustAnalyzer(),
-		analyzer.NewReproducibleBuildAnalyzer(),
-		analyzer.NewCodeSigningAnalyzer(),
-	}
-	if !noSandbox {
-		analyzers = append(analyzers, analyzer.NewSandboxAnalyzer())
-	}
-	return analyzers
+func isMultiPackageAudit(pr reporter.ProjectReport) bool {
+	return len(pr.Reports) > 1 || projectPath != "" || auditNodeModules
 }
 
-func buildProjectReport(deps []project.Dependency, sev analyzer.Severity, client *registry.Client, analyzers []analyzer.Analyzer) reporter.ProjectReport {
-	var projectReport reporter.ProjectReport
-	projectReport.ProjectName = projectPath
-	if auditNodeModules {
-		projectReport.ProjectName = "node_modules"
-	}
-
-	if concurrency < 1 {
-		concurrency = 1
-	}
-
-	var (
-		wg  sync.WaitGroup
-		mu  sync.Mutex
-		sem = make(chan struct{}, concurrency)
-	)
-
-	for _, dep := range deps {
-		wg.Add(1)
-		go func(d project.Dependency) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			report := auditPackage(d, sev, client, analyzers)
-			if report != nil {
-				mu.Lock()
-				projectReport.Reports = append(projectReport.Reports, *report)
-				mu.Unlock()
-			}
-		}(dep)
-	}
-	wg.Wait()
-
-	sort.Slice(projectReport.Reports, func(i, j int) bool {
-		return projectReport.Reports[i].Package < projectReport.Reports[j].Package
-	})
-
-	return projectReport
-}
-
-func auditPackage(d project.Dependency, sev analyzer.Severity, client *registry.Client, analyzers []analyzer.Analyzer) *reporter.Report {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
-	defer cancel()
-
-	if format == "terminal" && outputFile == "" {
-		stderrPrintf("Auditing %s...\n", d.Name)
-	}
-
-	pkg, err := client.GetPackage(ctx, d.Name)
-	if err != nil {
-		if verbose {
-			stderrPrintf("Skipping %s: %v\n", d.Name, err)
-		}
-		return nil
-	}
-
-	verName := resolveVersion(d, pkg)
-	if verName == "" {
-		return nil
-	}
-
-	version, ok := pkg.Versions[verName]
-	if !ok {
-		if verbose {
-			stderrPrintf("Skipping %s: version %s not found\n", d.Name, verName)
-		}
-		return nil
-	}
-
-	results := analyzer.RunAll(ctx, analyzers, pkg, &version)
-	if minSeverity != "" {
-		for i := range results {
-			results[i].Findings = analyzer.FilterByMinSeverity(results[i].Findings, sev)
-		}
-	}
-
-	info := buildPackageInfo(ctx, d.Name, pkg, &version, client)
-
-	return &reporter.Report{
-		Package: d.Name,
-		Version: verName,
-		Results: results,
-		Info:    info,
-	}
-}
-
-func resolveVersion(d project.Dependency, pkg *registry.PackageMetadata) string {
-	verName := d.Version
-	if verName == "" || strings.HasPrefix(verName, "^") || strings.HasPrefix(verName, "~") {
-		latestTag, ok := pkg.DistTags["latest"]
-		if !ok {
-			if verbose {
-				stderrPrintf("Skipping %s: no latest tag\n", d.Name)
-			}
-			return ""
-		}
-		return latestTag
-	}
-	return verName
-}
-
-func buildPackageInfo(ctx context.Context, name string, pkg *registry.PackageMetadata, version *registry.PackageVersion, client *registry.Client) reporter.PackageInfo {
-	info := reporter.PackageInfo{
-		License:       version.License,
-		TotalVersions: len(pkg.Versions),
-		Dependencies:  len(version.Dependencies),
-		HasScripts:    hasInstallScripts(version),
-	}
-	for _, m := range pkg.Maintainers {
-		info.Maintainers = append(info.Maintainers, m.Name)
-	}
-	if pkg.Repository != nil && pkg.Repository.URL != "" {
-		info.RepoURL = pkg.Repository.URL
-	}
-	if created, ok := pkg.Time["created"]; ok {
-		info.CreatedAt = created.Format("2006-01-02")
-	}
-
-	downloads, dlErr := client.GetDownloads(ctx, name)
-	if dlErr == nil && downloads != nil {
-		repInfo := reputation.Build(name, downloads.Downloads)
-		info.WeeklyDownloads = repInfo.WeeklyDownloads
-		info.DownloadTier = string(repInfo.DownloadTier)
-		info.IsTrustedScope = repInfo.IsTrustedScope
-		info.TrustedScopeOrg = repInfo.TrustedScopeOrg
-		info.ReputationScore = repInfo.ReputationScore
-	}
-
-	return info
-}
-
-func isMultiPackageAudit(deps []project.Dependency) bool {
-	return len(deps) > 1 || projectPath != "" || auditNodeModules
-}
-
-func renderReport(rep *reporter.Reporter, projectReport reporter.ProjectReport, deps []project.Dependency) error {
-	if isMultiPackageAudit(deps) {
+func renderReport(rep *reporter.Reporter, projectReport reporter.ProjectReport) error {
+	if isMultiPackageAudit(projectReport) {
 		return rep.RenderProject(projectReport)
 	}
 	if len(projectReport.Reports) > 0 {
@@ -540,12 +416,12 @@ func renderReport(rep *reporter.Reporter, projectReport reporter.ProjectReport, 
 	return nil
 }
 
-func renderAISummary(out io.Writer, projectReport reporter.ProjectReport, deps []project.Dependency) error {
+func renderAISummary(out io.Writer, projectReport reporter.ProjectReport) error {
 	var jsonBuf strings.Builder
 	jsonEnc := json.NewEncoder(&jsonBuf)
 	jsonEnc.SetIndent("", "  ")
 	var err error
-	if isMultiPackageAudit(deps) {
+	if isMultiPackageAudit(projectReport) {
 		err = jsonEnc.Encode(projectReport)
 	} else {
 		err = jsonEnc.Encode(projectReport.Reports[0])
@@ -558,14 +434,14 @@ func renderAISummary(out io.Writer, projectReport reporter.ProjectReport, deps [
 	var providerName string
 
 	if aiClaude {
-		if isMultiPackageAudit(deps) {
+		if isMultiPackageAudit(projectReport) {
 			summary, err = ai.GenerateClaudeTopListSummary([]byte(jsonBuf.String()))
 		} else {
 			summary, err = ai.GenerateClaudeSummary([]byte(jsonBuf.String()))
 		}
 		providerName = "Claude"
 	} else {
-		if isMultiPackageAudit(deps) {
+		if isMultiPackageAudit(projectReport) {
 			summary, err = ai.GenerateTopListSummary([]byte(jsonBuf.String()))
 		} else {
 			summary, err = ai.GenerateSummary([]byte(jsonBuf.String()))
@@ -585,21 +461,6 @@ func renderAISummary(out io.Writer, projectReport reporter.ProjectReport, deps [
 	fmt.Fprintln(out, summary)
 	fmt.Fprintln(out)
 	return nil
-}
-
-func hasInstallScripts(v *registry.PackageVersion) bool {
-	if v.HasInstallScript {
-		return true
-	}
-	if v.Scripts == nil {
-		return false
-	}
-	for _, name := range []string{"preinstall", "install", "postinstall"} {
-		if _, ok := v.Scripts[name]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 func flagChanged(cmd *cobra.Command, name string) bool {
@@ -759,92 +620,4 @@ func checkFailOn(pr reporter.ProjectReport, threshold string) error {
 		}
 	}
 	return nil
-}
-
-// AnalyzerInfo describes a registered analyzer for --list-analyzers output.
-type AnalyzerInfo struct {
-	Name        string
-	Category    string
-	Description string
-}
-
-func analyzerRegistry() []AnalyzerInfo {
-	return []AnalyzerInfo{
-		{"vulnerabilities", "Supply Chain", "Check for known CVEs and security advisories"},
-		{"install-scripts", "Supply Chain", "Detect suspicious install lifecycle scripts"},
-		{"typosquatting", "Supply Chain", "Detect package name typosquatting attacks"},
-		{"slopsquatting", "Supply Chain", "Detect LLM-hallucinated package names"},
-		{"maintainers", "Supply Chain", "Analyze maintainer trust signals"},
-		{"metadata", "Supply Chain", "Check package metadata for anomalies"},
-		{"dependencies", "Supply Chain", "Analyze dependency tree for risks"},
-		{"remote-dependencies", "Supply Chain", "Detect HTTP URL and git dependencies"},
-		{"binary-analysis", "Code Analysis", "Detect binary/compiled code in packages"},
-		{"provenance", "Build Integrity", "Verify SLSA provenance attestations"},
-		{"tarball-analysis", "Code Analysis", "Deep scan tarball contents for threats"},
-		{"repo-verification", "Supply Chain", "Verify repository URL authenticity"},
-		{"repository-issues", "Supply Chain", "Analyze GitHub issues for security reports"},
-		{"dangerous-shell-scripts", "Code Analysis", "Analyze shell scripts for dangerous commands"},
-		{"ossf-scorecard", "Supply Chain", "OpenSSF Scorecard-style security checks"},
-		{"commit-history", "Supply Chain", "Analyze git commit patterns for risks"},
-		{"download-patterns", "Supply Chain", "Analyze download patterns for anomalies"},
-		{"manifest-confusion", "Supply Chain", "Detect manifest vs tarball mismatches"},
-		{"version-anomalies", "Supply Chain", "Detect suspicious version publish patterns"},
-		{"starjacking", "Supply Chain", "Detect repository star-jacking attacks"},
-		{"community-trust", "Supply Chain", "Evaluate open source community signals"},
-		{"reproducible-build", "Build Integrity", "Verify build reproducibility"},
-		{"code-signing", "Build Integrity", "Verify code signing and integrity"},
-		{"dynamic-analysis", "Runtime Analysis", "Dynamic analysis in isolated sandbox"},
-		{"ast-analysis", "Code Analysis", "Deep JavaScript AST-based analysis"},
-		{"taint-analysis", "Code Analysis", "Data flow taint tracking analysis"},
-		{"env-fingerprinting", "Malware Detection", "Detect CI/CD and environment fingerprinting"},
-		{"multilayer-obfuscation", "Malware Detection", "Detect nested obfuscation techniques"},
-		{"anti-debug", "Malware Detection", "Detect anti-debugging techniques"},
-		{"phantom-deps", "Supply Chain", "Detect undeclared phantom dependencies"},
-		{"timebomb", "Malware Detection", "Detect time-based payload activation"},
-		{"crypto-theft", "Malware Detection", "Detect cryptocurrency theft patterns"},
-		{"multistage-loader", "Malware Detection", "Detect multi-stage payload loaders"},
-		{"proto-pollution", "Code Analysis", "Detect prototype pollution patterns"},
-		{"worm", "Malware Detection", "Detect self-propagating worm behavior"},
-		{"phishing", "Malware Detection", "Detect credential phishing techniques"},
-		{"side-effects", "Code Analysis", "Detect unexpected module side effects"},
-		{"telemetry", "Code Analysis", "Detect hidden telemetry and tracking"},
-		{"environment-variables", "Malware Detection", "Detect environment variable exfiltration"},
-		{"network-security", "Runtime Analysis", "Analyze network communication patterns"},
-		{"dangerous-extensions", "Code Analysis", "Detect dangerous file extensions in packages"},
-		{"suspicious-urls", "Code Analysis", "Detect suspicious URL patterns in code"},
-		{"exfiltration-endpoints", "Malware Detection", "Detect data exfiltration attempts"},
-		{"behavior-sequence", "Runtime Analysis", "Behavioral sequence analysis of execution"},
-		{"lockfile-analysis", "Supply Chain", "Analyze lockfile integrity and consistency"},
-		{"ai-evasion", "Malware Detection", "Detect AI/ML evasion techniques"},
-		{"minified-only", "Code Analysis", "Detect packages with only minified code"},
-		{"unicode-steganography", "Malware Detection", "Detect hidden payloads via Unicode variation selectors"},
-		{"persistence-mechanisms", "Malware Detection", "Detect crontab, shell profile, systemd, git hook persistence"},
-		{"reverse-shell", "Malware Detection", "Detect reverse shell establishment patterns"},
-		{"blockchain-c2", "Malware Detection", "Detect blockchain-based C2 infrastructure"},
-		{"ai-weaponization", "Malware Detection", "Detect AI CLI tool weaponization (s1ngularity)"},
-		{"dead-mans-switch", "Malware Detection", "Detect conditional destruction payloads"},
-		{"ci-backdoor", "Malware Detection", "Detect CI/CD pipeline backdoor injection"},
-		{"socks-proxy", "Malware Detection", "Detect SOCKS proxy and network tunneling setup"},
-		{"wasm-payload", "Malware Detection", "Detect WebAssembly-based payload delivery"},
-		{"cryptominer", "Malware Detection", "Detect cryptocurrency mining software"},
-	}
-}
-
-func printAnalyzerList(w io.Writer) {
-	infos := analyzerRegistry()
-	nameW, catW := 0, 0
-	for _, info := range infos {
-		if len(info.Name) > nameW {
-			nameW = len(info.Name)
-		}
-		if len(info.Category) > catW {
-			catW = len(info.Category)
-		}
-	}
-	fmt.Fprintf(w, "%-*s  %-*s  %s\n", nameW, "ANALYZER", catW, "CATEGORY", "DESCRIPTION")
-	fmt.Fprintf(w, "%-*s  %-*s  %s\n", nameW, strings.Repeat("-", nameW), catW, strings.Repeat("-", catW), strings.Repeat("-", 40))
-	for _, info := range infos {
-		fmt.Fprintf(w, "%-*s  %-*s  %s\n", nameW, info.Name, catW, info.Category, info.Description)
-	}
-	fmt.Fprintf(w, "\nTotal: %d analyzers\n", len(infos))
 }

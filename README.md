@@ -116,6 +116,9 @@ auditter -p package-lock.json --format pdf -o report.pdf --ai-summary
 
 # Update threat intelligence from online sources
 auditter update-intel
+
+# Start MCP server (for Claude Desktop)
+auditter mcp
 ```
 
 ---
@@ -124,6 +127,30 @@ auditter update-intel
 
 ```
 auditter <package-name> [flags]
+```
+
+### Model Context Protocol (MCP)
+
+auditter implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), allowing AI assistants like Claude Desktop to use it as a tool.
+
+**Features exposed to LLMs:**
+- `audit_package(package_name)`: Deep scan of a specific package.
+- `audit_project(path)`: Scan a local project directory.
+- `list_analyzers()`: Discover available security checks.
+
+**Configuration for Claude Desktop:**
+
+Add this to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "auditter": {
+      "command": "/path/to/auditter",
+      "args": ["mcp"]
+    }
+  }
+}
 ```
 
 ### Flags
