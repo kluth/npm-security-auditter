@@ -208,7 +208,7 @@ func (r *Reporter) RenderTopList(projectReport ProjectReport) error {
 	verdictH := r.T("verdict")
 
 	fmt.Fprintf(w, "  %s%s%-4s %-25s %-12s %-30s%s\n", colorBold, colorWhite, rankH, packageH, scoreH, verdictH, colorReset)
-	fmt.Fprintf(w, "  %s%s%s%s\n", colorDim, strings.Repeat("─", 4), strings.Repeat("─", 26), strings.Repeat("─", 13), strings.Repeat("─", 30))
+	fmt.Fprintf(w, "  %s%s %s %s %s%s\n", colorDim, strings.Repeat("─", 4), strings.Repeat("─", 25), strings.Repeat("─", 12), strings.Repeat("─", 30), colorReset)
 
 	for i, report := range projectReport.Reports {
 		scoreColor, _ := r.GetRiskLevel(report.Score)

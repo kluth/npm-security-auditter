@@ -91,10 +91,6 @@ func (m Model) viewDashboard() string {
 		// Findings (Left bottom)
 		findingsWidth := (mainWidth - 4) / 2
 		findingsStyle := PaneStyle
-		if m.activePane == PanePaneFindings { // Wait, I used PaneFindings in model.go, let me check
-			findingsStyle = FocusedPaneStyle
-		}
-		// Wait, I should use the correct enum value
 		if m.activePane == PaneFindings {
 			findingsStyle = FocusedPaneStyle
 		}
@@ -117,10 +113,6 @@ func (m Model) viewDashboard() string {
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, rightPane)
 }
-
-// Rename PaneFindings if needed, I used PaneFindings in model.go
-const PanePaneFindings = PaneFindings
-
 
 func (m Model) viewMain() string {
 	return m.mainMenu.View()
