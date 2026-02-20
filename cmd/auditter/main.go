@@ -52,6 +52,8 @@ var (
 	failOn           string
 	listAnalyzers    bool
 	aiSummary        bool
+	aiClaude         bool
+	limitTop         int
 )
 
 func main() {
@@ -87,20 +89,10 @@ func main() {
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
-		Use:   "update-intel",
-		Short: "Poll online sources for new security intelligence",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			m := intelligence.NewManager("")
-			m.AddProvider(intelligence.NewGitHubProvider(""))
-			m.AddProvider(intelligence.NewGitHubAdvisoryProvider())
-			m.AddProvider(intelligence.NewUnifiedIntelProvider())
-			fmt.Println("Updating threat intelligence from online sources...")
-			if err := m.Update(context.Background()); err != nil {
-				return err
-			}
-			fmt.Println("Threat intelligence updated successfully.")
-			return nil
-		},
+		Use:   "audit-top [category]",
+		Short: "Audit top npm packages by category from GitHub",
+		Long:  `Search GitHub for top repositories in a specific category/topic (e.g. web-framework, utility, testing) and audit their corresponding npm packages.`,
+		RunE:  runAuditTop,
 	})
 
 	rootCmd.Flags().StringVarP(&registryURL, "registry", "r", "", "npm registry URL (default: https://registry.npmjs.org)")
@@ -120,6 +112,8 @@ func main() {
 	rootCmd.Flags().StringVar(&failOn, "fail-on", "", "exit with code 2 if any finding meets/exceeds severity (low, medium, high, critical)")
 	rootCmd.Flags().BoolVar(&listAnalyzers, "list-analyzers", false, "list all available analyzers and exit")
 	rootCmd.Flags().BoolVar(&aiSummary, "ai-summary", false, "generate AI analysis via Gemini CLI")
+	rootCmd.Flags().BoolVar(&aiClaude, "ai-claude", false, "generate AI analysis via Claude CLI")
+	rootCmd.Flags().IntVar(&limitTop, "limit", 10, "number of top repositories to audit")
 
 	if err := rootCmd.Execute(); err != nil {
 		if exitErr, ok := err.(*ExitError); ok {
@@ -203,7 +197,7 @@ func runAudit(args []string) error {
 	if err := renderReport(rep, projectReport, deps); err != nil {
 		return err
 	}
-	if aiSummary && len(projectReport.Reports) > 0 {
+	if (aiSummary || aiClaude) && len(projectReport.Reports) > 0 {
 		if err := renderAISummary(out, projectReport, deps); err != nil {
 			stderrPrintf("Warning: failed to render AI summary: %v\n", err)
 		}
@@ -245,6 +239,78 @@ func run(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	return runAudit(args)
+}
+
+func runAuditTop(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		fmt.Println("Available GitHub categories/topics for top repositories:")
+		for _, cat := range intelligence.GetDefaultCategories() {
+			fmt.Printf("- %s\n", cat)
+		}
+		fmt.Println("\nUse: auditter audit-top [category]")
+		return nil
+	}
+
+	category := args[0]
+	fmt.Printf("Searching GitHub for top %d repositories in category %q...\n", limitTop, category)
+
+	deps, err := intelligence.FetchTopReposByCategory(context.Background(), category, limitTop)
+	if err != nil {
+		return err
+	}
+
+	if len(deps) == 0 {
+		return fmt.Errorf("no repositories found for category %q", category)
+	}
+
+	if err := loadConfiguration(cmd); err != nil {
+		return err
+	}
+	if jsonOutput {
+		format = "json"
+	}
+	sev, err := resolveMinSeverity()
+	if err != nil {
+		return err
+	}
+	out, cleanup, err := resolveOutput()
+	if err != nil {
+		return err
+	}
+	if cleanup != nil {
+		defer cleanup()
+	}
+
+	intelMgr := intelligence.NewManager("")
+	if err := intelMgr.Load(); err != nil {
+		stderrPrintf("Warning: failed to load threat intelligence: %v\n", err)
+	}
+
+	rep := reporter.NewWithOptions(out, format, reporter.Language(lang), verbose)
+	projectReport := buildProjectReport(deps, sev, registry.NewClient(registryURL), buildAnalyzers(intelMgr))
+	projectReport.ProjectName = category
+
+	if format == "terminal" && !verbose {
+		if err := rep.RenderTopList(projectReport); err != nil {
+			return err
+		}
+	} else {
+		if err := renderReport(rep, projectReport, deps); err != nil {
+			return err
+		}
+	}
+
+	if (aiSummary || aiClaude) && len(projectReport.Reports) > 0 {
+		if err := renderAISummary(out, projectReport, deps); err != nil {
+			stderrPrintf("Warning: failed to render AI summary: %v\n", err)
+		}
+	}
+
+	if failOn != "" {
+		return checkFailOn(projectReport, failOn)
+	}
+
+	return nil
 }
 
 func resolveDependencies(args []string) ([]project.Dependency, error) {
@@ -488,14 +554,32 @@ func renderAISummary(out io.Writer, projectReport reporter.ProjectReport, deps [
 		return fmt.Errorf("failed to encode report for AI summary: %w", err)
 	}
 
-	summary, err := ai.GenerateSummary([]byte(jsonBuf.String()))
+	var summary string
+	var providerName string
+
+	if aiClaude {
+		if isMultiPackageAudit(deps) {
+			summary, err = ai.GenerateClaudeTopListSummary([]byte(jsonBuf.String()))
+		} else {
+			summary, err = ai.GenerateClaudeSummary([]byte(jsonBuf.String()))
+		}
+		providerName = "Claude"
+	} else {
+		if isMultiPackageAudit(deps) {
+			summary, err = ai.GenerateTopListSummary([]byte(jsonBuf.String()))
+		} else {
+			summary, err = ai.GenerateSummary([]byte(jsonBuf.String()))
+		}
+		providerName = "Gemini"
+	}
+
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "\n%sAI Summary unavailable: %s%s\n", "\033[33m", err, "\033[0m")
+		fmt.Fprintf(os.Stderr, "\n%sAI Summary (%s) unavailable: %s%s\n", "\033[33m", providerName, err, "\033[0m")
 		return nil // Not a fatal error
 	}
 
 	fmt.Fprintf(out, "\n%s╔══════════════════════════════════════════════════════════════════════╗%s\n", "\033[1;36m", "\033[0m")
-	fmt.Fprintf(out, "%s║  AI Analysis (Gemini)                                                ║%s\n", "\033[1;36m", "\033[0m")
+	fmt.Fprintf(out, "%s║  AI Analysis (%-10s)                                          ║%s\n", "\033[1;36m", providerName, "\033[0m")
 	fmt.Fprintf(out, "%s╚══════════════════════════════════════════════════════════════════════╝%s\n", "\033[1;36m", "\033[0m")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, summary)

@@ -24,6 +24,8 @@ func (m Model) View() string {
 		content = m.viewAuditProject()
 	case ScreenAuditNodeModules:
 		content = m.viewAuditNodeModules()
+	case ScreenAuditTop:
+		content = m.viewAuditTop()
 	case ScreenSettings:
 		content = m.viewSettings()
 	case ScreenThreatIntel:
@@ -48,7 +50,7 @@ func (m Model) viewStatusBar() string {
 		keys = "tab switch pane • ↑/↓ navigate • enter select/detail • s save • q quit"
 	case ScreenMain:
 		keys = "↑/↓ navigate • enter select • q quit"
-	case ScreenAuditPackage, ScreenAuditProject, ScreenAuditNodeModules:
+	case ScreenAuditPackage, ScreenAuditProject, ScreenAuditNodeModules, ScreenAuditTop:
 		keys = "enter submit • esc back"
 	case ScreenSettings:
 		keys = "tab/↓ next field • shift+tab/↑ prev • esc save & back"
@@ -159,6 +161,21 @@ func (m Model) viewAuditNodeModules() string {
 	b.WriteString(InputStyle.Width(m.width - 6).Render(m.textInput.View()))
 	b.WriteString("\n\n")
 	b.WriteString(HelpStyle.Render("Enter the path to the node_modules directory to scan"))
+	return lipgloss.Place(m.width, m.height-2, lipgloss.Left, lipgloss.Top,
+		lipgloss.NewStyle().Padding(1, 2).Render(b.String()))
+}
+
+func (m Model) viewAuditTop() string {
+	var b strings.Builder
+	b.WriteString(TitleStyle.Render("Audit Top Repos"))
+	b.WriteString("\n\n")
+	b.WriteString(InputLabelStyle.Render("GitHub Category / Topic:"))
+	b.WriteString("\n")
+	b.WriteString(InputStyle.Width(m.width - 6).Render(m.textInput.View()))
+	b.WriteString("\n\n")
+	b.WriteString(HelpStyle.Render("Examples: web-framework, testing, utility, cli, backend"))
+	b.WriteString("\n")
+	b.WriteString(SubtitleStyle.Render("This will fetch the top 10 repos from GitHub and audit their npm versions."))
 	return lipgloss.Place(m.width, m.height-2, lipgloss.Left, lipgloss.Top,
 		lipgloss.NewStyle().Padding(1, 2).Render(b.String()))
 }

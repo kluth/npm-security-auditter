@@ -69,6 +69,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateAuditProject(msg)
 	case ScreenAuditNodeModules:
 		return m.updateAuditNodeModules(msg)
+	case ScreenAuditTop:
+		return m.updateAuditTop(msg)
 	case ScreenSettings:
 		return m.updateSettings(msg)
 	case ScreenThreatIntel:
@@ -148,6 +150,12 @@ func (m Model) updateMain(msg tea.Msg) (Model, tea.Cmd) {
 				m.textInput.Focus()
 				return m, m.textInput.Cursor.BlinkCmd()
 			case 3:
+				m.screen = ScreenAuditTop
+				m.textInput.SetValue("")
+				m.textInput.Placeholder = "e.g. web-framework"
+				m.textInput.Focus()
+				return m, m.textInput.Cursor.BlinkCmd()
+			case 4:
 				m.screen = ScreenSettings
 				m.settingsFocus = FieldRegistry
 				for i := range m.settingsFields {
@@ -155,12 +163,12 @@ func (m Model) updateMain(msg tea.Msg) (Model, tea.Cmd) {
 				}
 				m.settingsFields[0].Focus()
 				return m, m.settingsFields[0].Cursor.BlinkCmd()
-			case 4:
+			case 5:
 				m.screen = ScreenThreatIntel
 				m.threatInput.SetValue("")
 				m.threatInput.Focus()
 				return m, m.threatInput.Cursor.BlinkCmd()
-			case 5:
+			case 6:
 				if m.results != nil {
 					m.activePane = PaneFindings
 				}
@@ -239,6 +247,31 @@ func (m Model) updateAuditNodeModules(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.screen = ScreenRunning
 			m.auditFn = func() tea.Msg {
 				return runNodeModulesAudit(val, m.settingsValues)
+			}
+			return m, tea.Batch(m.spinner.Tick, func() tea.Msg { return m.auditFn() })
+		}
+	}
+	var cmd tea.Cmd
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
+}
+
+func (m Model) updateAuditTop(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.screen = ScreenDashboard
+			return m, nil
+		case "enter":
+			val := m.textInput.Value()
+			if val == "" {
+				return m, nil
+			}
+			m.runMsg = "Auditing top repos for category: " + val
+			m.screen = ScreenRunning
+			m.auditFn = func() tea.Msg {
+				return runAuditTopRepos(val, m.settingsValues)
 			}
 			return m, tea.Batch(m.spinner.Tick, func() tea.Msg { return m.auditFn() })
 		}

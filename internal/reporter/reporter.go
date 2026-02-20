@@ -175,6 +175,72 @@ func (r *Reporter) RenderProject(projectReport ProjectReport) error {
 	return nil
 }
 
+// RenderTopList outputs a ranked list of packages by security score (lowest risk first).
+func (r *Reporter) RenderTopList(projectReport ProjectReport) error {
+	w := r.writer
+
+	// First calculate all scores
+	for i := range projectReport.Reports {
+		report := &projectReport.Reports[i]
+		if report.Info.WeeklyDownloads > 0 || report.Info.IsTrustedScope {
+			report.Score = CalculateRiskScoreWithReputation(report.Results, report.Info)
+		} else {
+			report.Score = CalculateRiskScore(report.Results)
+		}
+	}
+
+	// Sort by score (lowest risk first)
+	sort.Slice(projectReport.Reports, func(i, j int) bool {
+		return projectReport.Reports[i].Score < projectReport.Reports[j].Score
+	})
+
+	r.printLogo(w)
+	fmt.Fprintln(w)
+
+	title := r.T("top_list_title", projectReport.ProjectName)
+	r.printBox(w, " "+title, colorCyan)
+	fmt.Fprintln(w)
+
+	// Render table header
+	rankH := r.T("rank")
+	packageH := r.T("package")
+	scoreH := r.T("score")
+	verdictH := r.T("verdict")
+
+	fmt.Fprintf(w, "  %s%s%-4s %-25s %-12s %-30s%s\n", colorBold, colorWhite, rankH, packageH, scoreH, verdictH, colorReset)
+	fmt.Fprintf(w, "  %s%s%s%s\n", colorDim, strings.Repeat("─", 4), strings.Repeat("─", 26), strings.Repeat("─", 13), strings.Repeat("─", 30))
+
+	for i, report := range projectReport.Reports {
+		scoreColor, _ := r.GetRiskLevel(report.Score)
+		severityCounts := countSeverities(collectFindings(report.Results))
+		verdict := r.getVerdict(report.Score, severityCounts)
+		
+		// Truncate long package names
+		pkgName := report.Package
+		if len(pkgName) > 24 {
+			pkgName = pkgName[:21] + "..."
+		}
+
+		// Icon for verdict
+		icon := "✅"
+		if report.Score >= 70 {
+			icon = "⛔"
+		} else if report.Score >= 40 {
+			icon = "⚠️ "
+		} else if report.Score >= 20 {
+			icon = "📋"
+		}
+
+		fmt.Fprintf(w, "  %2d. %-25s %s%-12s%s %s %-30s\n", 
+			i+1, pkgName, scoreColor, fmt.Sprintf("%d/100", report.Score), colorReset, icon, verdict)
+	}
+
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "  %s%s%s\n\n", colorDim, r.T("audited_at", time.Now().UTC().Format(time.RFC3339)), colorReset)
+
+	return nil
+}
+
 func (r *Reporter) renderProjectPDF(projectReport ProjectReport) error {
 	pdf := fpdf.New("P", "mm", "A4", "")
 

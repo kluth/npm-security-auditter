@@ -358,6 +358,61 @@ func saveReport(result *AuditResult, path string) tea.Msg {
 	return reportSavedMsg{path: path}
 }
 
+func runAuditTopRepos(category string, cfg SettingsConfig) tea.Msg {
+	start := time.Now()
+	client := buildClient(cfg)
+	ctx := context.Background()
+
+	deps, err := intelligence.FetchTopReposByCategory(ctx, category, 10)
+	if err != nil {
+		return auditErrorMsg{err: fmt.Errorf("fetching top repos for %s: %w", category, err)}
+	}
+
+	analyzers := buildAnalyzers(client)
+	var allFindings []analyzer.Finding
+
+	for _, dep := range deps {
+		meta, mErr := client.GetPackage(ctx, dep.Name)
+		if mErr != nil {
+			continue
+		}
+		// Use latest for top repos
+		tag, exists := meta.DistTags["latest"]
+		if !exists {
+			continue
+		}
+		ver, ok := meta.Versions[tag]
+		if !ok {
+			continue
+		}
+
+		results := analyzer.RunAll(ctx, analyzers, meta, &ver)
+		for _, res := range results {
+			// Prepend package name to finding title
+			for _, f := range res.Findings {
+				f.Title = fmt.Sprintf("%s: %s", dep.Name, f.Title)
+				allFindings = append(allFindings, f)
+			}
+		}
+	}
+
+	minSev, _ := parseSeverity(cfg.Severity)
+	allFindings = analyzer.FilterByMinSeverity(allFindings, minSev)
+
+	score := 0
+	if len(allFindings) > 0 {
+		score = 50
+	}
+
+	return auditCompleteMsg{result: &AuditResult{
+		PackageName: "Top Repos: " + category,
+		RiskScore:   float64(score),
+		Findings:    convertFindings(allFindings),
+		RawFindings: allFindings,
+		Duration:    time.Since(start),
+	}}
+}
+
 func parseSeverity(s string) (analyzer.Severity, error) {
 	switch strings.ToLower(s) {
 	case "low":

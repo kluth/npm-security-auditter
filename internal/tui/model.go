@@ -27,6 +27,7 @@ const (
 	ScreenResultDetail
 	ScreenRunning
 	ScreenSaveReport
+	ScreenAuditTop
 	ScreenDashboard // New dashboard screen
 )
 
@@ -157,6 +158,7 @@ func NewModel() Model {
 		MenuItem{title: "Audit Package", desc: "Scan a single npm package by name"},
 		MenuItem{title: "Audit Project", desc: "Scan a project directory's package.json"},
 		MenuItem{title: "Audit node_modules", desc: "Scan installed node_modules directory"},
+		MenuItem{title: "Audit Top Repos", desc: "Audit top GitHub repos by category"},
 		MenuItem{title: "Settings", desc: "Configure registry, timeout, severity, language"},
 		MenuItem{title: "Threat Intelligence", desc: "Update threat intelligence sources"},
 		MenuItem{title: "Results", desc: "View last audit results and findings"},

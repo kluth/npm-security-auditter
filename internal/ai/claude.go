@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// GeminiPrompt is the system prompt for the Gemini AI analysis.
-const GeminiPrompt = `You are a security analyst reviewing npm package audit results. Analyze the JSON audit report and provide a concise security assessment.
+// ClaudePrompt is the system prompt for the Claude AI analysis.
+const ClaudePrompt = `You are a security analyst reviewing npm package audit results. Analyze the JSON audit report and provide a concise security assessment.
 
 Format your response EXACTLY as follows:
 
@@ -29,8 +29,8 @@ CONTEXT:
 
 Be concise and actionable. Focus on real security concerns, not informational findings.`
 
-// GeminiTopListPrompt is the system prompt for comparing multiple packages.
-const GeminiTopListPrompt = `You are a security architect comparing multiple npm packages in the same category. 
+// ClaudeTopListPrompt is the system prompt for comparing multiple packages.
+const ClaudeTopListPrompt = `You are a security architect comparing multiple npm packages in the same category. 
 Analyze the audit reports for these packages and provide a ranked recommendation list.
 Identify which packages are most secure and why, and which ones should be avoided.
 
@@ -50,29 +50,28 @@ FINAL ARCHITECTURAL ADVICE:
 
 Be concise and focus on identifying the most production-ready, secure option.`
 
-// GenerateSummary invokes the Gemini CLI to analyze the audit report JSON.
-// It returns the AI-generated summary or an error if the CLI is not available.
-func GenerateSummary(reportJSON []byte) (string, error) {
-	return generateGeminiWithPrompt(reportJSON, GeminiPrompt)
+// GenerateClaudeSummary invokes the Claude CLI to analyze the audit report JSON.
+func GenerateClaudeSummary(reportJSON []byte) (string, error) {
+	return generateClaudeWithPrompt(reportJSON, ClaudePrompt)
 }
 
-// GenerateTopListSummary invokes the Gemini CLI with the top list comparison prompt.
-func GenerateTopListSummary(reportJSON []byte) (string, error) {
-	return generateGeminiWithPrompt(reportJSON, GeminiTopListPrompt)
+// GenerateClaudeTopListSummary invokes the Claude CLI with the top list comparison prompt.
+func GenerateClaudeTopListSummary(reportJSON []byte) (string, error) {
+	return generateClaudeWithPrompt(reportJSON, ClaudeTopListPrompt)
 }
 
-func generateGeminiWithPrompt(reportJSON []byte, prompt string) (string, error) {
-	// Check if gemini CLI is available
-	_, err := exec.LookPath("gemini")
+func generateClaudeWithPrompt(reportJSON []byte, prompt string) (string, error) {
+	// Check if claude CLI is available
+	_, err := exec.LookPath("claude")
 	if err != nil {
-		return "", fmt.Errorf("gemini CLI not found: %w (install with: pip install google-generativeai)", err)
+		return "", fmt.Errorf("claude CLI not found: %w", err)
 	}
 
 	// Prepare the full prompt with the JSON data
 	fullPrompt := prompt + "\n\nAudit Report JSON:\n" + string(reportJSON)
 
-	// Execute gemini CLI
-	cmd := exec.Command("gemini", "-p", fullPrompt)
+	// Execute claude CLI with --print (-p) mode
+	cmd := exec.Command("claude", "-p", fullPrompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -81,16 +80,16 @@ func generateGeminiWithPrompt(reportJSON []byte, prompt string) (string, error) 
 	if err != nil {
 		errMsg := stderr.String()
 		if errMsg != "" {
-			return "", fmt.Errorf("gemini CLI error: %s", strings.TrimSpace(errMsg))
+			return "", fmt.Errorf("claude CLI error: %s", strings.TrimSpace(errMsg))
 		}
-		return "", fmt.Errorf("gemini CLI failed: %w", err)
+		return "", fmt.Errorf("claude CLI failed: %w", err)
 	}
 
 	return strings.TrimSpace(stdout.String()), nil
 }
 
-// IsAvailable checks if the Gemini CLI is installed and accessible.
-func IsAvailable() bool {
-	_, err := exec.LookPath("gemini")
+// IsClaudeAvailable checks if the Claude CLI is installed and accessible.
+func IsClaudeAvailable() bool {
+	_, err := exec.LookPath("claude")
 	return err == nil
 }
