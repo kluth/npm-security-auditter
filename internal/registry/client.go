@@ -11,14 +11,19 @@ import (
 )
 
 const (
-	DefaultRegistry     = "https://registry.npmjs.org"
+	// DefaultRegistry is the official npm public registry URL.
+	DefaultRegistry = "https://registry.npmjs.org"
+	// DefaultDownloadsAPI is the base URL for the npm downloads statistics API.
 	DefaultDownloadsAPI = "https://api.npmjs.org"
 )
 
-// Client is an HTTP client for the npm registry.
+// Client is an HTTP client for interacting with the npm registry and downloads API.
 type Client struct {
-	httpClient   *http.Client
-	registryURL  string
+	// httpClient is the internal HTTP client used for requests.
+	httpClient *http.Client
+	// registryURL is the base URL of the npm registry.
+	registryURL string
+	// downloadsURL is the base URL of the downloads statistics API.
 	downloadsURL string
 }
 

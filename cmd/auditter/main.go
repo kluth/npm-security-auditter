@@ -239,9 +239,8 @@ func run(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	if interactive {
-		p := tea.NewProgram(initialModel())
-		if _, err := p.Run(); err != nil {
-			return fmt.Errorf("error running TUI: %w", err)
+		if err := runTUI(); err != nil {
+			return err
 		}
 		return nil
 	}

@@ -6,40 +6,61 @@ import (
 	"strings"
 )
 
-// PackageJSON represents a standard package.json file.
+// PackageJSON represents a standard package.json file containing project metadata and dependencies.
 type PackageJSON struct {
-	Name            string            `json:"name"`
-	Version         string            `json:"version"`
-	Dependencies    map[string]string `json:"dependencies"`
+	// Name is the name of the project.
+	Name string `json:"name"`
+	// Version is the version of the project.
+	Version string `json:"version"`
+	// Dependencies are the packages required for production.
+	Dependencies map[string]string `json:"dependencies"`
+	// DevDependencies are the packages required for development and testing.
 	DevDependencies map[string]string `json:"devDependencies"`
 }
 
-// PackageLock represents a package-lock.json file.
+// PackageLock represents a package-lock.json file, supporting multiple lockfile versions.
 type PackageLock struct {
-	Name            string                       `json:"name"`
-	Version         string                       `json:"version"`
-	LockfileVersion int                          `json:"lockfileVersion"`
-	Packages        map[string]LockPackage       `json:"packages"`     // For lockfileVersion 3
-	Dependencies    map[string]LegacyLockPackage `json:"dependencies"` // For lockfileVersion 1, 2
-}
-
-type LockPackage struct {
-	Version      string            `json:"version"`
-	Resolved     string            `json:"resolved"`
-	Integrity    string            `json:"integrity"`
-	Dependencies map[string]string `json:"dependencies"`
-}
-
-type LegacyLockPackage struct {
-	Version      string                       `json:"version"`
-	Resolved     string                       `json:"resolved"`
-	Integrity    string                       `json:"integrity"`
+	// Name is the name of the project.
+	Name string `json:"name"`
+	// Version is the version of the project.
+	Version string `json:"version"`
+	// LockfileVersion is the version of the lockfile format (1, 2, or 3).
+	LockfileVersion int `json:"lockfileVersion"`
+	// Packages contains dependency information for lockfile v3.
+	Packages map[string]LockPackage `json:"packages"`
+	// Dependencies contains dependency information for lockfile v1 and v2.
 	Dependencies map[string]LegacyLockPackage `json:"dependencies"`
 }
 
-// Dependency represents a package and version to be audited.
+// LockPackage represents a single package entry in a modern package-lock.json file.
+type LockPackage struct {
+	// Version is the installed version of the package.
+	Version string `json:"version"`
+	// Resolved is the URL or location from which the package was retrieved.
+	Resolved string `json:"resolved"`
+	// Integrity is the subresource integrity string.
+	Integrity string `json:"integrity"`
+	// Dependencies maps dependency names to their version requirements.
+	Dependencies map[string]string `json:"dependencies"`
+}
+
+// LegacyLockPackage represents a package entry in older package-lock.json formats.
+type LegacyLockPackage struct {
+	// Version is the installed version of the package.
+	Version string `json:"version"`
+	// Resolved is the URL or location from which the package was retrieved.
+	Resolved string `json:"resolved"`
+	// Integrity is the subresource integrity string.
+	Integrity string `json:"integrity"`
+	// Dependencies contains nested legacy lock package entries.
+	Dependencies map[string]LegacyLockPackage `json:"dependencies"`
+}
+
+// Dependency represents a package and its version that needs to be audited.
 type Dependency struct {
-	Name    string
+	// Name is the name of the package.
+	Name string
+	// Version is the specific version or version range of the package.
 	Version string
 }
 

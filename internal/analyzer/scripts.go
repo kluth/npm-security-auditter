@@ -130,6 +130,7 @@ func (s *ScriptsAnalyzer) Analyze(_ context.Context, _ *registry.PackageMetadata
 			Severity:       severity,
 			ExploitExample: exploitExample,
 			Remediation:    "Inspect the script content in the tarball. If the script is unnecessary, use 'npm install --ignore-scripts'. If valid, ensure it does not download or execute arbitrary external code.",
+			File:           "package.json",
 		})
 
 		for _, sp := range suspiciousPatterns {
@@ -141,6 +142,7 @@ func (s *ScriptsAnalyzer) Analyze(_ context.Context, _ *registry.PackageMetadata
 					Severity:       sp.severity,
 					ExploitExample: sp.exploit,
 					Remediation:    "This pattern suggests malicious behavior or obfuscation. Verify the script's purpose manually. If suspicious, do not install the package and report it to the registry.",
+					File:           "package.json",
 				})
 			}
 		}

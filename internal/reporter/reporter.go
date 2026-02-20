@@ -48,26 +48,39 @@ type PackageInfo struct {
 
 // Report holds the complete audit results.
 type Report struct {
-	Package   string            `json:"package"`
-	Version   string            `json:"version"`
-	Results   []analyzer.Result `json:"results"`
-	Score     int               `json:"risk_score"`
-	Info      PackageInfo       `json:"package_info"`
-	AuditedAt string            `json:"audited_at"`
+	// Package is the name of the audited package.
+	Package string `json:"package"`
+	// Version is the specific version of the package that was audited.
+	Version string `json:"version"`
+	// Results contains the findings from all analyzers.
+	Results []analyzer.Result `json:"results"`
+	// Score is the aggregated risk score (0-100).
+	Score int `json:"risk_score"`
+	// Info contains basic metadata about the package.
+	Info PackageInfo `json:"package_info"`
+	// AuditedAt is the timestamp when the audit was performed.
+	AuditedAt string `json:"audited_at"`
 }
 
 // ProjectReport holds audit results for multiple packages.
 type ProjectReport struct {
-	ProjectName string   `json:"project_name,omitempty"`
-	Reports     []Report `json:"reports"`
-	TotalScore  int      `json:"total_risk_score"`
+	// ProjectName is the name of the project or the path to the project file.
+	ProjectName string `json:"project_name,omitempty"`
+	// Reports contains the individual reports for each package in the project.
+	Reports []Report `json:"reports"`
+	// TotalScore is the aggregated risk score for the entire project.
+	TotalScore int `json:"total_risk_score"`
 }
 
 // Reporter outputs audit results to a writer.
 type Reporter struct {
-	writer  io.Writer
-	format  string
-	lang    Language
+	// writer is where the report will be written.
+	writer io.Writer
+	// format is the desired output format (e.g., terminal, json, pdf).
+	format string
+	// lang is the language for the report.
+	lang Language
+	// verbose indicates whether to show all individual findings.
 	verbose bool
 }
 
@@ -853,7 +866,7 @@ func (r *Reporter) printLogo(w io.Writer) {
   \_| |_/\__,_|\__,_|_|\__|\__\___|_|
 `
 	fmt.Fprintf(w, "%s%s%s\n", colorBold, colorMagenta, logo)
-	fmt.Fprintf(w, " %s%s npm Security Audit - Version 1.7.0 %s\n", colorCyan, strings.Repeat("━", 10), colorReset)
+	fmt.Fprintf(w, " %s%s npm Security Audit - Version 2.5.0 %s\n", colorCyan, strings.Repeat("━", 10), colorReset)
 }
 
 func (r *Reporter) renderMarkdown(report Report) error {
@@ -893,7 +906,21 @@ func (r *Reporter) renderMarkdown(report Report) error {
 
 			fmt.Fprintf(w, "### %s [%s] %s\n\n", severityEmoji, f.Severity, r.T(f.Title))
 			fmt.Fprintf(w, "- **%s**: %s\n", r.T("analyzer_label", ""), f.Analyzer)
+			if f.File != "" {
+				loc := f.File
+				if f.Line > 0 {
+					loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+					if f.Column > 0 {
+						loc = fmt.Sprintf("%s:%d:%d", f.File, f.Line, f.Column)
+					}
+				}
+				fmt.Fprintf(w, "- **Location**: %s\n", loc)
+			}
 			fmt.Fprintf(w, "\n%s\n\n", r.T(f.Description))
+
+			if f.CodeExtract != "" {
+				fmt.Fprintf(w, "#### 📄 %s\n\n```javascript\n%s\n```\n\n", "Code Snippet", f.CodeExtract)
+			}
 
 			if f.ExploitExample != "" {
 				fmt.Fprintf(w, "#### 💣 %s\n\n```javascript\n%s\n```\n\n", r.T("attack_scenario"), r.T(f.ExploitExample))
@@ -955,8 +982,21 @@ func (r *Reporter) renderHTML(report Report) error {
 			fmt.Fprintf(w, "<div class='card finding %s'>", f.Severity)
 			fmt.Fprintf(w, "<h3>[%s] %s</h3>", f.Severity, r.T(f.Title))
 			fmt.Fprintf(w, "<p><i>%s: %s</i></p>", r.T("analyzer_label", ""), f.Analyzer)
+			if f.File != "" {
+				loc := f.File
+				if f.Line > 0 {
+					loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+					if f.Column > 0 {
+						loc = fmt.Sprintf("%s:%d:%d", f.File, f.Line, f.Column)
+					}
+				}
+				fmt.Fprintf(w, "<p><b>Location:</b> %s</p>", loc)
+			}
 			fmt.Fprintf(w, "<p>%s</p>", r.T(f.Description))
 
+			if f.CodeExtract != "" {
+				fmt.Fprintf(w, "<h4>📄 Code Snippet</h4><pre><code>%s</code></pre>", f.CodeExtract)
+			}
 			if f.ExploitExample != "" {
 				fmt.Fprintf(w, "<h4>💣 %s</h4><pre><code>%s</code></pre>", r.T("attack_scenario"), r.T(f.ExploitExample))
 			}
@@ -976,9 +1016,9 @@ func (r *Reporter) renderHTML(report Report) error {
 func (r *Reporter) renderCSV(report Report) error {
 	w := r.writer
 	allFindings := collectFindings(report.Results)
-	fmt.Fprintf(w, "%s,%s,%s,%s\n", r.T("csv_severity"), r.T("csv_analyzer"), r.T("csv_title"), r.T("csv_description"))
+	fmt.Fprintf(w, "%s,%s,%s,%s,%s,%s,%s\n", r.T("csv_severity"), r.T("csv_analyzer"), r.T("csv_title"), r.T("csv_description"), "File", "Line", "Column")
 	for _, f := range allFindings {
-		fmt.Fprintf(w, "%s,%s,\"%s\",\"%s\"\n", f.Severity, f.Analyzer, strings.ReplaceAll(f.Title, "\"", "\"\""), strings.ReplaceAll(f.Description, "\"", "\"\""))
+		fmt.Fprintf(w, "%s,%s,\"%s\",\"%s\",\"%s\",%d,%d\n", f.Severity, f.Analyzer, strings.ReplaceAll(f.Title, "\"", "\"\""), strings.ReplaceAll(f.Description, "\"", "\"\""), f.File, f.Line, f.Column)
 	}
 	return nil
 }
@@ -1042,7 +1082,28 @@ func (r *Reporter) printDetailedFinding(w io.Writer, f analyzer.Finding, sevColo
 	fmt.Fprintf(w, "\n  %s%s%s %s%s\n",
 		colorBold, sevColor, severityIcon(sev), title, colorReset)
 	fmt.Fprintf(w, "  %s%s%s\n", colorDim, r.T("analyzer_label", f.Analyzer), colorReset)
+
+	if f.File != "" {
+		loc := f.File
+		if f.Line > 0 {
+			loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+			if f.Column > 0 {
+				loc = fmt.Sprintf("%s:%d:%d", f.File, f.Line, f.Column)
+			}
+		}
+		fmt.Fprintf(w, "  %sLocation: %s%s\n", colorDim, loc, colorReset)
+	}
+
 	r.printWrapped(w, r.T(f.Description), "  ", reportWidth)
+
+	if f.CodeExtract != "" {
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "  %sCode Snippet:%s\n", colorBold, colorReset)
+		lines := strings.Split(f.CodeExtract, "\n")
+		for _, line := range lines {
+			fmt.Fprintf(w, "    %s%s%s\n", colorDim, line, colorReset)
+		}
+	}
 
 	if f.ExploitExample != "" {
 		fmt.Fprintln(w)
@@ -1259,6 +1320,7 @@ type MergedFinding struct {
 	analyzer.Finding
 	Count     int      // Number of findings merged
 	Instances []string // Brief descriptions of each instance (for context)
+	Locations []string // Detailed locations (file:line:col)
 }
 
 // mergeSimilarFindings combines findings with the same analyzer and title.
@@ -1288,6 +1350,17 @@ func mergeSimilarFindings(findings []analyzer.Finding) []MergedFinding {
 				}
 				existing.Instances = append(existing.Instances, instance)
 			}
+			// Accumulate locations
+			if f.File != "" {
+				loc := f.File
+				if f.Line > 0 {
+					loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+					if f.Column > 0 {
+						loc = fmt.Sprintf("%s:%d:%d", f.File, f.Line, f.Column)
+					}
+				}
+				existing.Locations = append(existing.Locations, loc)
+			}
 			existing.Count++
 			// Prefer non-empty exploit examples and remediations
 			if existing.ExploitExample == "" && f.ExploitExample != "" {
@@ -1301,6 +1374,17 @@ func mergeSimilarFindings(findings []analyzer.Finding) []MergedFinding {
 				Finding:   f,
 				Count:     1,
 				Instances: []string{},
+				Locations: []string{},
+			}
+			if f.File != "" {
+				loc := f.File
+				if f.Line > 0 {
+					loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+					if f.Column > 0 {
+						loc = fmt.Sprintf("%s:%d:%d", f.File, f.Line, f.Column)
+					}
+				}
+				mf.Locations = append(mf.Locations, loc)
 			}
 			groups[key] = mf
 			order = append(order, key)
@@ -1344,60 +1428,186 @@ func countActiveAnalyzers(results []analyzer.Result) int {
 	return count
 }
 
-// CalculateRiskScore computes a 0-100 risk score from findings.
+// CalculateRiskScore computes a 0-100 risk score from findings using a balanced, 
+// category-weighted approach with diminishing returns for multiple findings 
+// of the same type.
 func CalculateRiskScore(results []analyzer.Result) int {
-	score := 0
+	// Points for each severity level
+	const (
+		ptsCritical = 50.0
+		ptsHigh     = 25.0
+		ptsMedium   = 10.0
+		ptsLow      = 3.0
+	)
+
+	// Weights for different analyzer categories
+	const (
+		weightMalware  = 1.0 // confirmed malware or high-signal supply chain attacks
+		weightVuln     = 0.8 // known CVEs/advisories
+		weightCode     = 0.6 // suspicious code patterns (AST, Taint, Obfuscation)
+		weightMetadata = 0.3 // metadata anomalies, community signals
+	)
+
+	categoryScores := make(map[string]float64)
+
 	for _, r := range results {
-		for _, f := range r.Findings {
+		cat := getAnalyzerCategory(r.AnalyzerName)
+		var analyzerSum float64
+
+		if len(r.Findings) == 0 {
+			continue
+		}
+
+		// Apply diminishing returns for multiple findings from the same analyzer
+		// 100% of first, 50% of second, 20% of rest
+		dampened := 0.0
+		for i, f := range r.Findings {
+			p := ptsLow
 			switch f.Severity {
-			case analyzer.SeverityCritical:
-				score += 25
-			case analyzer.SeverityHigh:
-				score += 15
-			case analyzer.SeverityMedium:
-				score += 5
-			case analyzer.SeverityLow:
-				score += 2
+			case analyzer.SeverityCritical: p = ptsCritical
+			case analyzer.SeverityHigh: p = ptsHigh
+			case analyzer.SeverityMedium: p = ptsMedium
+			}
+			
+			if i == 0 {
+				dampened += p
+			} else if i == 1 {
+				dampened += p * 0.5
+			} else {
+				dampened += p * 0.2
 			}
 		}
+		analyzerSum = dampened
+		categoryScores[cat] += analyzerSum
 	}
-	if score > 100 {
-		score = 100
+
+	// Sum category scores with weights
+	totalScore := 0.0
+	for cat, sum := range categoryScores {
+		weight := weightMetadata
+		switch cat {
+		case "malware": weight = weightMalware
+		case "vuln":    weight = weightVuln
+		case "code":    weight = weightCode
+		}
+		
+		// Apply saturation per category: one category alone shouldn't easily hit 100
+		// unless it's malware.
+		saturated := sum
+		if cat != "malware" && saturated > 60 {
+			saturated = 60 + (saturated-60)*0.2
+		}
+		
+		totalScore += saturated * weight
 	}
-	return score
+
+	if totalScore > 100 {
+		totalScore = 100
+	}
+	return int(totalScore)
+}
+
+// getAnalyzerCategory maps an analyzer name to a risk category.
+func getAnalyzerCategory(name string) string {
+	switch name {
+	case "threat-intel", "install-scripts", "typosquatting", "slopsquatting", 
+	     "multistage-loader", "exfiltration-endpoints", "blockchain-c2", 
+	     "ai-weaponization", "persistence-mechanisms", "reverse-shell", "worm", "phishing":
+		return "malware"
+	case "vulnerabilities":
+		return "vuln"
+	case "binary-analysis", "tarball-analysis", "ast-analysis", "taint-analysis", 
+	     "multilayer-obfuscation", "anti-debug", "proto-pollution", "env-fingerprinting", 
+	     "side-effects", "minified-only", "unicode-steganography", "wasm-payload", 
+	     "behavior-sequence", "suspicious-urls", "telemetry", "dangerous-extensions", 
+	     "dangerous-shell-scripts", "env-variables", "network-security":
+		return "code"
+	default:
+		return "metadata"
+	}
 }
 
 // CalculateRiskScoreWithReputation computes a risk score adjusted by package reputation.
-// Trusted scopes and high download counts reduce the score.
+// Trusted scopes and high download counts significantly reduce the risk impact 
+// of code and metadata findings, as these are often false positives in popular packages.
 func CalculateRiskScoreWithReputation(results []analyzer.Result, info PackageInfo) int {
-	baseScore := CalculateRiskScore(results)
+	// We calculate scores per category again to apply reputation scaling differently
+	const (
+		ptsCritical = 50.0
+		ptsHigh     = 25.0
+		ptsMedium   = 10.0
+		ptsLow      = 3.0
+	)
 
-	// Apply reputation adjustments
-	adjustment := 0
-
-	// Trusted scope: significant reduction
+	// Reputation Multipliers (how much we TRUST the signals)
+	// Lower multiplier = more trust = lower final score
+	repMultiplier := 1.0
+	
+	// Determine base reputation multiplier
 	if info.IsTrustedScope {
-		adjustment -= 20
+		repMultiplier = 0.4 // Highly trusted
+	} else {
+		switch info.DownloadTier {
+		case "massive":  repMultiplier = 0.5
+		case "popular":  repMultiplier = 0.7
+		case "moderate": repMultiplier = 0.9
+		}
 	}
 
-	// Download tier adjustments - larger reductions for widely-used packages
-	switch info.DownloadTier {
-	case "massive": // 10M+ downloads - extremely well-vetted
-		adjustment -= 25
-	case "popular": // 1M+ downloads - very well-vetted
-		adjustment -= 15
-	case "moderate": // 100K+ downloads
-		adjustment -= 5
-	case "minimal": // <10K downloads with many findings is suspicious
-		// No bonus, but could add penalty in future
+	categoryScores := make(map[string]float64)
+	for _, r := range results {
+		cat := getAnalyzerCategory(r.AnalyzerName)
+		dampened := 0.0
+		for i, f := range r.Findings {
+			p := ptsLow
+			switch f.Severity {
+			case analyzer.SeverityCritical: p = ptsCritical
+			case analyzer.SeverityHigh: p = ptsHigh
+			case analyzer.SeverityMedium: p = ptsMedium
+			}
+			if i == 0 { dampened += p } else if i == 1 { dampened += p * 0.5 } else { dampened += p * 0.2 }
+		}
+		categoryScores[cat] += dampened
 	}
 
-	score := baseScore + adjustment
-	if score < 0 {
-		score = 0
+	totalScore := 0.0
+	for cat, sum := range categoryScores {
+		var weight float64
+		var scale float64
+
+		switch cat {
+		case "malware":
+			weight = 1.0
+			// Malware is serious regardless of reputation, but we slightly 
+			// discount "suspicious" patterns in popular packages because they are 
+			// more likely to be exotic but legitimate code.
+			scale = 1.0 
+			if repMultiplier < 1.0 {
+				scale = 0.8 + (repMultiplier * 0.2) // minimum 0.9 for malware
+			}
+		case "vuln":
+			weight = 0.8
+			scale = 0.7 + (repMultiplier * 0.3) // vulns are real, but popular packages fix them faster
+		case "code":
+			weight = 0.6
+			scale = repMultiplier // Code anomalies are common in popular packages
+		default: // metadata
+			weight = 0.3
+			scale = repMultiplier * 0.7 // Metadata noise is very high in popular packages
+		}
+
+		saturated := sum
+		if cat != "malware" && saturated > 60 {
+			saturated = 60 + (saturated-60)*0.2
+		}
+		totalScore += saturated * weight * scale
 	}
-	if score > 100 {
-		score = 100
+
+	if totalScore > 100 {
+		totalScore = 100
 	}
-	return score
+	if totalScore < 0 {
+		totalScore = 0
+	}
+	return int(totalScore)
 }

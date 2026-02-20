@@ -22,43 +22,47 @@ func TestCalculateRiskScore(t *testing.T) {
 			want:    0,
 		},
 		{
-			name: "single low",
+			name: "single low metadata",
 			results: []analyzer.Result{
-				{Findings: []analyzer.Finding{{Severity: analyzer.SeverityLow}}},
+				{AnalyzerName: "metadata", Findings: []analyzer.Finding{{Severity: analyzer.SeverityLow}}},
 			},
-			want: 2,
+			want: 0, // 3 * 0.3 = 0.9 -> 0
 		},
 		{
-			name: "single critical",
+			name: "single high vuln",
 			results: []analyzer.Result{
-				{Findings: []analyzer.Finding{{Severity: analyzer.SeverityCritical}}},
+				{AnalyzerName: "vulnerabilities", Findings: []analyzer.Finding{{Severity: analyzer.SeverityHigh}}},
 			},
-			want: 25,
+			want: 20, // 25 * 0.8 = 20
 		},
 		{
-			name: "mixed findings",
+			name: "single critical malware",
 			results: []analyzer.Result{
-				{Findings: []analyzer.Finding{
-					{Severity: analyzer.SeverityCritical},
-					{Severity: analyzer.SeverityHigh},
-					{Severity: analyzer.SeverityMedium},
-					{Severity: analyzer.SeverityLow},
-				}},
+				{AnalyzerName: "threat-intel", Findings: []analyzer.Finding{{Severity: analyzer.SeverityCritical}}},
 			},
-			want: 47, // 25 + 15 + 5 + 2
+			want: 50, // 50 * 1.0 = 50
 		},
 		{
-			name: "capped at 100",
+			name: "mixed findings different categories",
 			results: []analyzer.Result{
-				{Findings: []analyzer.Finding{
-					{Severity: analyzer.SeverityCritical},
-					{Severity: analyzer.SeverityCritical},
-					{Severity: analyzer.SeverityCritical},
-					{Severity: analyzer.SeverityCritical},
-					{Severity: analyzer.SeverityCritical},
-				}},
+				{AnalyzerName: "threat-intel", Findings: []analyzer.Finding{{Severity: analyzer.SeverityHigh}}}, // 25 * 1.0 = 25
+				{AnalyzerName: "metadata", Findings: []analyzer.Finding{{Severity: analyzer.SeverityHigh}}},     // 25 * 0.3 = 7.5
 			},
-			want: 100,
+			want: 32, // 25 + 7 = 32
+		},
+		{
+			name: "dampening within analyzer",
+			results: []analyzer.Result{
+				{
+					AnalyzerName: "vulnerabilities",
+					Findings: []analyzer.Finding{
+						{Severity: analyzer.SeverityHigh}, // 25
+						{Severity: analyzer.SeverityHigh}, // 25 * 0.5 = 12.5
+						{Severity: analyzer.SeverityHigh}, // 25 * 0.2 = 5
+					}, // sum = 42.5. Cat weight 0.8 -> 34
+				},
+			},
+			want: 34,
 		},
 	}
 
@@ -478,6 +482,85 @@ func TestBreakdownColorAllCases(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("breakdownColor(%+v) = %q, want %q", tt.e, got, tt.want)
 		}
+	}
+}
+
+func TestCalculateRiskScoreWithReputation(t *testing.T) {
+	results := []analyzer.Result{
+		{
+			AnalyzerName: "ast-analysis", // category: code (weight 0.6)
+			Findings: []analyzer.Finding{
+				{Severity: analyzer.SeverityHigh}, // 25
+			},
+		},
+		{
+			AnalyzerName: "metadata", // category: metadata (weight 0.3)
+			Findings: []analyzer.Finding{
+				{Severity: analyzer.SeverityMedium}, // 10
+			},
+		},
+	}
+
+	tests := []struct {
+		name string
+		info PackageInfo
+		want int
+	}{
+		{
+			name: "minimal reputation",
+			info: PackageInfo{DownloadTier: "minimal", IsTrustedScope: false},
+			// code: 25 * 0.6 * 1.0 = 15
+			// metadata: 10 * 0.3 * (1.0 * 0.7) = 2.1
+			// Total: 17.1 -> 17
+			want: 17,
+		},
+		{
+			name: "massive reputation",
+			info: PackageInfo{DownloadTier: "massive", IsTrustedScope: false},
+			// repMultiplier = 0.5
+			// code: 25 * 0.6 * 0.5 = 7.5
+			// metadata: 10 * 0.3 * (0.5 * 0.7) = 10 * 0.3 * 0.35 = 1.05
+			// Total: 7.5 + 1.05 = 8.55 -> 8
+			want: 8,
+		},
+		{
+			name: "trusted scope",
+			info: PackageInfo{IsTrustedScope: true},
+			// repMultiplier = 0.4
+			// code: 25 * 0.6 * 0.4 = 6
+			// metadata: 10 * 0.3 * (0.4 * 0.7) = 10 * 0.3 * 0.28 = 0.84
+			// Total: 6 + 0.84 = 6.84 -> 6
+			want: 6,
+		},
+		{
+			name: "malware remains high",
+			info: PackageInfo{DownloadTier: "massive"},
+			// results with malware
+		},
+	}
+
+	for _, tt := range tests {
+		if tt.name == "malware remains high" {
+			malwareResults := []analyzer.Result{
+				{
+					AnalyzerName: "threat-intel",
+					Findings:     []analyzer.Finding{{Severity: analyzer.SeverityCritical}}, // 50
+				},
+			}
+			// repMultiplier = 0.5
+			// malware: 50 * 1.0 * (0.8 + 0.5*0.2) = 50 * 1.0 * 0.9 = 45
+			got := CalculateRiskScoreWithReputation(malwareResults, tt.info)
+			if got < 40 {
+				t.Errorf("Malware score should remain high for massive package, got %d", got)
+			}
+			continue
+		}
+		t.Run(tt.name, func(t *testing.T) {
+			got := CalculateRiskScoreWithReputation(results, tt.info)
+			if got != tt.want {
+				t.Errorf("CalculateRiskScoreWithReputation() = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 

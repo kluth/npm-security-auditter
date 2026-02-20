@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -13,9 +14,13 @@ import (
 type Severity int
 
 const (
+	// SeverityLow indicates an informational finding or minor risk.
 	SeverityLow Severity = iota
+	// SeverityMedium indicates a moderate security risk that should be reviewed.
 	SeverityMedium
+	// SeverityHigh indicates a serious security risk that needs immediate attention.
 	SeverityHigh
+	// SeverityCritical indicates a verified malicious pattern or critical vulnerability.
 	SeverityCritical
 )
 
@@ -42,6 +47,10 @@ type Finding struct {
 	Severity       Severity `json:"severity"`
 	ExploitExample string   `json:"exploit_example,omitempty"`
 	Remediation    string   `json:"remediation,omitempty"`
+	File           string   `json:"file,omitempty"`
+	Line           int      `json:"line,omitempty"`
+	Column         int      `json:"column,omitempty"`
+	CodeExtract    string   `json:"code_extract,omitempty"`
 }
 
 // Analyzer is the interface that all security analyzers implement.
@@ -52,8 +61,11 @@ type Analyzer interface {
 
 // Result holds the output of a single analyzer run.
 type Result struct {
+	// AnalyzerName is the name of the analyzer that was run.
 	AnalyzerName string
+	// Findings is the list of security findings found by the analyzer.
 	Findings     []Finding
+	// Err is any error that occurred during the analysis.
 	Err          error
 }
 
@@ -117,4 +129,51 @@ func StripComments(content string) string {
 	})
 
 	return content
+}
+
+// GetLineCol returns the 1-based line and column number for a given byte offset.
+func GetLineCol(content string, offset int) (int, int) {
+	if offset < 0 || offset > len(content) {
+		return 0, 0
+	}
+	line := 1
+	col := 1
+	for i := 0; i < offset; i++ {
+		if content[i] == '\n' {
+			line++
+			col = 1
+		} else {
+			col++
+		}
+	}
+	return line, col
+}
+
+// GetCodeExtract returns a snippet of code around the given range.
+func GetCodeExtract(content string, start, end int, contextLines int) string {
+	if start < 0 || end > len(content) || start > end {
+		return ""
+	}
+
+	lines := strings.Split(content, "\n")
+	startLine, _ := GetLineCol(content, start)
+	
+	s := startLine - contextLines - 1
+	if s < 0 {
+		s = 0
+	}
+	e := startLine + contextLines
+	if e > len(lines) {
+		e = len(lines)
+	}
+
+	var res strings.Builder
+	for i := s; i < e; i++ {
+		prefix := "  "
+		if i == startLine-1 {
+			prefix = "> "
+		}
+		res.WriteString(fmt.Sprintf("%s%d: %s\n", prefix, i+1, lines[i]))
+	}
+	return res.String()
 }

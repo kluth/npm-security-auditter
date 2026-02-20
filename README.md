@@ -49,33 +49,35 @@ To minimize noise in large, legitimate utility libraries (like `lodash`), auditt
 
 **macOS:**
 ```bash
-# Download the Universal PKG from the latest release
-curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_latest_macOS_Universal.pkg
-sudo installer -pkg auditter_latest_macOS_Universal.pkg -target /
+# Get the latest version tag
+VERSION=$(curl -s https://api.github.com/repos/kluth/npm-security-auditter/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+curl -LO "https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_${VERSION}_macOS_Universal.pkg"
+sudo installer -pkg "auditter_${VERSION}_macOS_Universal.pkg" -target /
 ```
 
 **Debian / Ubuntu:**
 ```bash
-curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_latest_linux_amd64.deb
-sudo dpkg -i auditter_latest_linux_amd64.deb
+# Replace 2.4.1 with the latest version if needed
+curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_2.4.1_linux_amd64.deb
+sudo dpkg -i auditter_2.4.1_linux_amd64.deb
 ```
 
 **Fedora / RHEL:**
 ```bash
-curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_latest_linux_amd64.rpm
-sudo rpm -i auditter_latest_linux_amd64.rpm
+curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_2.4.1_linux_amd64.rpm
+sudo rpm -i auditter_2.4.1_linux_amd64.rpm
 ```
 
 **Arch Linux:**
 ```bash
-curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_latest_linux_amd64.pkg.tar.zst
-sudo pacman -U auditter_latest_linux_amd64.pkg.tar.zst
+curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_2.4.1_linux_amd64.pkg.tar.zst
+sudo pacman -U auditter_2.4.1_linux_amd64.pkg.tar.zst
 ```
 
 **Alpine Linux:**
 ```bash
-curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_latest_linux_amd64.apk
-sudo apk add --allow-untrusted auditter_latest_linux_amd64.apk
+curl -LO https://github.com/kluth/npm-security-auditter/releases/latest/download/auditter_2.4.1_linux_amd64.apk
+sudo apk add --allow-untrusted auditter_2.4.1_linux_amd64.apk
 ```
 
 **Windows:**\

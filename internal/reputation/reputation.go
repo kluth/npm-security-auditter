@@ -88,13 +88,18 @@ func IsTrustedScope(name string) (bool, string) {
 	return false, ""
 }
 
-// Info holds reputation information for a package.
+// Info holds reputation information for a package, including its popularity and trust signals.
 type Info struct {
-	WeeklyDownloads int          `json:"weekly_downloads"`
-	DownloadTier    DownloadTier `json:"download_tier"`
-	IsTrustedScope  bool         `json:"is_trusted_scope"`
-	TrustedScopeOrg string       `json:"trusted_scope_org,omitempty"`
-	ReputationScore int          `json:"reputation_score"`
+	// WeeklyDownloads is the number of downloads in the last 7 days.
+	WeeklyDownloads int `json:"weekly_downloads"`
+	// DownloadTier is a classification of the package's popularity (e.g., massive, popular).
+	DownloadTier DownloadTier `json:"download_tier"`
+	// IsTrustedScope indicates if the package name starts with a well-known, trusted scope.
+	IsTrustedScope bool `json:"is_trusted_scope"`
+	// TrustedScopeOrg is the name of the organization associated with the trusted scope.
+	TrustedScopeOrg string `json:"trusted_scope_org,omitempty"`
+	// ReputationScore is a calculated value (0-100) representing the overall trust in the package.
+	ReputationScore int `json:"reputation_score"`
 }
 
 // Build constructs reputation information for a package.
