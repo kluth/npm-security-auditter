@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/kluth/npm-security-auditter/internal/analyzer"
+	"github.com/kluth/npm-security-auditter/internal/audit"
 	"github.com/kluth/npm-security-auditter/internal/registry"
 	"github.com/kluth/npm-security-auditter/internal/reporter"
 	"github.com/spf13/cobra"
@@ -100,9 +101,9 @@ func TestHasInstallScripts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := hasInstallScripts(tt.version)
+			got := audit.HasInstallScripts(tt.version)
 			if got != tt.want {
-				t.Errorf("hasInstallScripts() = %v, want %v", got, tt.want)
+				t.Errorf("HasInstallScripts() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -850,14 +851,14 @@ func TestExitErrorInterface(t *testing.T) {
 // ─── Feature 3: --list-analyzers flag tests ───────────────────────────────
 
 func TestAnalyzerRegistryCount(t *testing.T) {
-	infos := analyzerRegistry()
+	infos := audit.AnalyzerRegistry()
 	if len(infos) != 57 {
 		t.Errorf("expected 57 analyzers in registry, got %d", len(infos))
 	}
 }
 
 func TestAnalyzerRegistryAllFieldsPopulated(t *testing.T) {
-	infos := analyzerRegistry()
+	infos := audit.AnalyzerRegistry()
 	for i, info := range infos {
 		if info.Name == "" {
 			t.Errorf("analyzer %d has empty Name", i)
@@ -880,7 +881,7 @@ func TestAnalyzerRegistryCategories(t *testing.T) {
 		"Runtime Analysis":  true,
 	}
 
-	infos := analyzerRegistry()
+	infos := audit.AnalyzerRegistry()
 	for _, info := range infos {
 		if !validCategories[info.Category] {
 			t.Errorf("analyzer %q has invalid category %q", info.Name, info.Category)
@@ -890,7 +891,7 @@ func TestAnalyzerRegistryCategories(t *testing.T) {
 
 func TestPrintAnalyzerListOutput(t *testing.T) {
 	var buf bytes.Buffer
-	printAnalyzerList(&buf)
+	audit.PrintAnalyzerList(&buf)
 	output := buf.String()
 
 	if !strings.Contains(output, "ANALYZER") {
@@ -927,7 +928,7 @@ func TestListAnalyzersExitsEarly(t *testing.T) {
 }
 
 func TestAnalyzerRegistryUniqueNames(t *testing.T) {
-	infos := analyzerRegistry()
+	infos := audit.AnalyzerRegistry()
 	seen := make(map[string]bool)
 	for _, info := range infos {
 		if seen[info.Name] {

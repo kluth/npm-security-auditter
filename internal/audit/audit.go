@@ -222,7 +222,8 @@ func resolveVersion(d project.Dependency, pkg *registry.PackageMetadata) string 
 	return verName
 }
 
-func hasInstallScripts(v *registry.PackageVersion) bool {
+// HasInstallScripts checks if a package version has install lifecycle scripts.
+func HasInstallScripts(v *registry.PackageVersion) bool {
 	if v.HasInstallScript {
 		return true
 	}
@@ -242,7 +243,7 @@ func buildPackageInfo(ctx context.Context, name string, pkg *registry.PackageMet
 		License:       version.License,
 		TotalVersions: len(pkg.Versions),
 		Dependencies:  len(version.Dependencies),
-		HasScripts:    hasInstallScripts(version),
+		HasScripts:    HasInstallScripts(version),
 	}
 	for _, m := range pkg.Maintainers {
 		info.Maintainers = append(info.Maintainers, m.Name)
@@ -269,7 +270,7 @@ func buildPackageInfo(ctx context.Context, name string, pkg *registry.PackageMet
 
 // PrintAnalyzerList prints the list of available analyzers.
 func PrintAnalyzerList(w io.Writer) {
-	infos := analyzerRegistry()
+	infos := AnalyzerRegistry()
 	nameW, catW := 0, 0
 	for _, info := range infos {
 		if len(info.Name) > nameW {
@@ -294,7 +295,8 @@ type AnalyzerInfo struct {
 	Description string
 }
 
-func analyzerRegistry() []AnalyzerInfo {
+// AnalyzerRegistry returns the list of all registered analyzers and their info.
+func AnalyzerRegistry() []AnalyzerInfo {
 	return []AnalyzerInfo{
 		{"vulnerabilities", "Supply Chain", "Check for known CVEs and security advisories"},
 		{"install-scripts", "Supply Chain", "Detect suspicious install lifecycle scripts"},
